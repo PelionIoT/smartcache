@@ -217,6 +217,7 @@ var SmartCache = function(opts) {
                             var delg = new cacheDelegate(key,_selfUpdater);
                             // ok - ask Updater for the 'selfUpdate'
                             stats.updateCalls++;
+                            // TODO protect this call with try/catch:
                             var ret = _cb.call(_selfUpdater,undefined,data,key,delg);
                             if(ret && typeof ret === 'object' && typeof ret.then === 'function') {
                                 ret.then(function(r){
@@ -242,12 +243,13 @@ var SmartCache = function(opts) {
                                 _throttleCbQ = [];
                                 _throttleTimer = null;
                             }
+                        } else {
+                            _throttleCbQ = [];
+                            _throttleTimer = null;                           
                         }
-
                     // } catch(e) {
                     //     log_err("Ouch. Exception in throttle callback",e);
                     // }
-
                     }.bind(_selfUpdater,data,key),throttle);
 
                 }
@@ -618,6 +620,8 @@ var SmartCache = function(opts) {
         timerTable = {};
         updatersById = {};
     }
+
+
 
 
     this.getStats = function() {
