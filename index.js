@@ -100,6 +100,7 @@ var SmartCache = function(opts) {
     /**
      * An updater takes a callback. That callback does two things:
      *      function callback(val,data,key,cache) {
+     *          console.log("I am Updater:",this.id()); // this refers to the Updater
      *          data = data + val; // or any other arbritrary magic!
      *          console.log("this data belongs to key:",key);
      *          // I could use the cache to update other stuff now if 
@@ -296,9 +297,9 @@ var SmartCache = function(opts) {
         if(key && updater && updater instanceof smartcache.Updater) {
 //            removeUpdater(updater.id()); // remove an old updater with same ID if it exists
             updaterTableByKey[key] = updater.id();
-            log_dbg("Adding updater:",updater.id());
             updater._ref++;
-            updatersById[updater.id()] = updater;            
+            log_dbg("Adding updater:",updater.id(),"(ref =",updater._ref+")");
+            updatersById[updater.id()] = updater;
 //            var opts = updater.getOpts();
             makeTimeoutForKey(key,updater);
         } else {
@@ -470,17 +471,23 @@ var SmartCache = function(opts) {
                     // got a Promsie - so wait until complete.
                     log_dbg("Updater returned Promise - will wait for it.");
                     if(!pendingByKey[key]) {
-                        pendingByKey = new WaitQueue();
+                        pendingByKey[key] = new WaitQueue();
                     }
                     // make the WaitQueue - so that when other looks for this key
                     // they know that a value is being retrieved.
                     ret.then(function(result){
+                        log_dbg("pending: got resolve for key",key);
+                        cache.set(key,ret,ttl);
                         var waitQ = pendingByKey[key];
                         if(waitQ) {
                             waitQ.resolve(result);
                         }
                         delete pendingByKey[key];
                     },function(err){
+                        log_dbg("pending: got reject! for key",key);
+                        if(err) {
+                            log_err("Got error in pending updater:",err);
+                        }
                         var waitQ = pendingByKey[key];
                         if(waitQ) {
                             waitQ.reject(result);

@@ -16,24 +16,30 @@ var VALS = [];
 
 var testUpdater = new cache.Updater(function(val,data,key,cache){
 	// this - refers to the Updater
-	console.log("In [testUpdater (" + this.id() + ":" + this._ref + ")].callback - key",key);
-	if(val !== undefined) {
-		console.log("got a 'set' command");
-		cache.set('key2',val); cache.set('key3',val)
-		return val;
-	} else {
-		console.log("[testUpdater] was a 'selfUpdate' ")
-		if(data !== undefined) {
-			console.log("  + has data");
-			cache.set('key2',data); 
-			cache.set('key3',data+1)
-			return double(data);
-		} else {
-			console.log("  - no data");
-			cache.set('key2',5); cache.set('key3',5)
-			return 5;
-		}
-	}
+	var self = this;
+	return new Promise(function(resolve,reject){
+		setTimeout(function(){
+			console.log("In [testUpdater (" + self.id() + ":" + self._ref + ")].callback - key",key);
+			if(val !== undefined) {
+				console.log("got a 'set' command");
+				cache.set('key2',val); cache.set('key3',val)
+				resolve(val);
+				return;
+			} else {
+				console.log("[testUpdater] was a 'selfUpdate' ")
+				if(data !== undefined) {
+					console.log("  + has data");
+					cache.set('key2',data); 
+					cache.set('key3',data+1)
+					resolve(double(data));
+				} else {
+					console.log("  - no data");
+					cache.set('key2',5); cache.set('key3',5)
+					resolve(5);
+				}
+			}
+		},1000);
+	});
 },function(val,key,cache){
 	console.log("On delete key:",key,"last val was:",val);
 },
