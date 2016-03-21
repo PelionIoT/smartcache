@@ -43,11 +43,12 @@ var SmartCache = function(opts) {
     var stats = {
         hits: 0,
         misses: 0,
-        updates: 0,
+        updateCalls: 0,
         allGets: 0
     };
 
     var defaultTTL = undefined;
+    var defaultThrottle = 2000;
 
     var log_dbg = function() {
 
@@ -56,6 +57,7 @@ var SmartCache = function(opts) {
     if(opts && typeof opts === 'object') {
         if(opts.debug_mode) log_dbg = ON_log_dbg;
         if(typeof opts.defaultTTL === 'number' && opts.defaultTTL > 0) defaultTTL = opts.defaultTTL;
+        if(typeof opts.defaultThrottle === 'number' && opts.defaultThrottle > 0) defaultThrottle = opts.defaultThrottle;
     }
 
     var cache = new jsCache();
@@ -127,6 +129,7 @@ var SmartCache = function(opts) {
      * @param {Object} [opts] Options. If provided, this must be the fourth argument:
      *      {
      *         interval: 60*1000, // an optional refresh interval the Updater should be called
+     *         throttle: 5000,    // only call the updater every 5 seconds, no quicker
      *         id: "someName"     // a specified ID name, otherwise a random new name will be generated
      *                            // useful if replacing an Updater
      *      } The interval the updater should self update if desired.
@@ -144,6 +147,12 @@ var SmartCache = function(opts) {
         var _id = base32.randomBase32();
         var _shutdownCB = onShutdownCB;
 
+
+        var _throttleTimer = null;
+        var _throttleCbQ = [];
+        var _throttleDeleteCb = null;
+        var _throttleDeleteCbQ = [];
+
         this.shutdown = function() {
             if(_shutdownCB && typeof _shutdownCB === 'function') {
                 _shutdownCB();
@@ -151,6 +160,7 @@ var SmartCache = function(opts) {
         }
 
         var options = opts;
+        var throttle = defaultThrottle;
         if(options) {
             if(typeof options !== 'object') {
                 throw new TypeError("Bad parameter.");
@@ -159,8 +169,25 @@ var SmartCache = function(opts) {
                 _id = options.id;
                 delete options.id;
             }
+            if(options.throttle) {
+                throttle = defaultThrottle;
+            }
         } else {
             options = {};
+        }
+
+
+        var completeWaits_resolve = function(Q,ret) {
+            log_dbg("completeWaits_resolve");
+            for(var n=0;n<Q.length;n++) {
+                Q[n].resolve(ret);
+            }
+        }
+        var completeWaits_reject = function(Q,err) {
+                        log_dbg("completeWaits_reject");
+            for(var n=0;n<Q.length;n++) {
+                Q[n].reject(err);
+            }
         }
 
         /** called when an interval expires, or when a value
@@ -169,8 +196,65 @@ var SmartCache = function(opts) {
          * @returns {*}
          */
         this.selfUpdate = function(data,key) {
-            var delg = new cacheDelegate(key,_selfUpdater);
-            return _cb.call(_selfUpdater,undefined,data,key,delg);
+            if(_throttleTimer) { // a callback is running or just ran, 
+                                 // still in throttle window
+                var token = {};
+                log_dbg("updater",_selfUpdater.id(),"returning Promise on throttle");
+                var prom = new Promise(function(resolve,reject){
+                    token.resolve = resolve;
+                    token.reject = reject;
+                    _throttleCbQ.push(token);
+                });
+                return prom;
+            } else {
+                if(throttle != undefined && throttle > 0) {
+                    log_dbg("Throttling for Updater",_selfUpdater.id(),throttle);
+                    _throttleTimer = setTimeout(function(data,key){
+                    // try {                        
+                        log_dbg("Throttling for updater [",this.id(),"] ending.");
+                        if(_throttleCbQ.length > 0) { 
+                        // if anyone is waiting, then run the updater again
+                            var delg = new cacheDelegate(key,_selfUpdater);
+                            // ok - ask Updater for the 'selfUpdate'
+                            stats.updateCalls++;
+                            var ret = _cb.call(_selfUpdater,undefined,data,key,delg);
+                            if(ret && typeof ret === 'object' && typeof ret.then === 'function') {
+                                ret.then(function(r){
+                                    completeWaits_resolve(_throttleCbQ,r);
+                                    _throttleCbQ = [];
+                                    _throttleTimer = null;
+                                },function(err){
+                                    completeWaits_reject(_throttleCbQ,err);
+                                    _throttleCbQ = [];
+                                    _throttleTimer = null;
+                                }).catch(function(e){
+                                    log_err("Exception in throttled selfUpdate",e);
+                                    completeWaits_reject(_throttleCbQ,e);
+                                    _throttleCbQ = [];
+                                    _throttleTimer = null;
+                                });
+                            } else {
+                                if(ret) {
+                                    completeWaits_resolve(_throttleCbQ,ret);
+                                } else {
+                                    completeWaits_reject(_throttleCbQ,undefined);
+                                }
+                                _throttleCbQ = [];
+                                _throttleTimer = null;
+                            }
+                        }
+
+                    // } catch(e) {
+                    //     log_err("Ouch. Exception in throttle callback",e);
+                    // }
+
+                    }.bind(_selfUpdater,data,key),throttle);
+
+                }
+                var delg = new cacheDelegate(key,_selfUpdater);
+                stats.updateCalls++;
+                return _cb.call(_selfUpdater,undefined,data,key,delg);                
+            }
         }
         this.set = function(val,data,key){
             var delg = new cacheDelegate(key,_selfUpdater);
@@ -423,12 +507,12 @@ var SmartCache = function(opts) {
                 resolve(d);
                 return;
             }
-            stats.misses++;
             if(!queueForNotifyByKey(key,resolve,reject)) {                
                 log_dbg("no key:",key);
                 reject(); // no data for that key
                 return;
             }
+            stats.misses++;
             log_dbg("Key",key,"not in cache but have updater. Updating.");
         });
     }
