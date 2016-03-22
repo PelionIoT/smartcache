@@ -62,6 +62,190 @@ var SmartCache = function(opts) {
 
     var cache = new jsCache();
 
+    var backing = null;
+
+
+
+   /**
+     * The cacheBackingInterface is passed into the Backing to add keys into the cache.
+     * However, any items the Updater manipulates *will use* the given Updater in the future.
+     * @param  {[type]} keyForCall The `key` value handed to the updater when this cacheDelegate was also
+     * passed in
+     * @param  {[type]} updater    The updater using the cacheDelegate
+     * @class  cacheDelegate
+     */
+    var cacheBackingInterface = function(proms){
+        var promises = proms;
+        var pairs = {};
+        this.set = function(key,val){
+            if(typeof key === 'string') {
+                pairs[key] = val;                
+            } else {
+                throw new TypeError("Key must be a string");
+            }
+        }
+
+        this._promises = function() {
+            return promises;
+        }
+        this._pairs = function() {
+            return pairs;
+        }
+    }
+    
+
+    /**
+     * Provides for a storage backing hooking for the cache.
+     * @param {function} writeCB        A callback which should return a Promise which resolves when the write is complete.
+     * The callback is of the form:
+     *      function(pairs) {
+     *          // pairs is an Array of {key:'key',val:'val'} pairs 
+     *          // which should be written to storage
+     *      }
+     * @param {function} readCB         A callback which should return a Promise which resolves when a read is complete.
+     *      function(pairs,cache) {
+     *          // pairs is an Object of {'key': null} where 'key' should be filled in with the value @ key
+     *          // the cache object is provided, the same as handed to the Updater object, to
+     *          // all the readCB to provie opportunistic caching if it has new data to hand to the cache
+     *          resolve(pairs);
+     *      }
+     * @param {function} [onConnectCB]    An optional call back which should be called on initialization of the cache.
+     * @param {Function} [onDisconnectCB] An optional call back which will be called when the cache goes offline / is `shutdown`
+     * @param {object} [opts] If you want the backing to always keep values in cache, use opts.defaultTTL = null;
+     */
+    this.Backing = function(writeCB,readCB,onConnectCB,onDisconnectCB,opts) {
+        var _selfBacking = this;
+
+        var wrThrottle = null;
+        var rdThrottle = null;
+        var _id = base32.randomBase32();
+        var backingTTL = defaultTTL;
+
+        if(opts && typeof opts === 'object') {
+            if(opts.wrThrottle) {
+                wrThrottle = opts.wrThrottle;
+            }
+            if(opts.rdThrottle) {
+                rdThrottle = opts.rdThrottle;
+            }
+            if(opts.id) {
+                _id = opts.id;
+            }
+            if(opts.defaultTTL != undefined) {
+                backingTTL = opts.defaultTTL;
+            }
+        }
+
+        if(!writeCB || typeof writeCB !== 'function'
+            || !readCB || typeof readCB !== 'function') {
+            throw new TypeError("Missing mandatory parameters");
+        }
+
+        this.id = function() {
+            return _id;
+        }
+
+        writeQ = [];
+        writerTimeout = null;
+
+        this._write = function(key,val) {
+            var doWrite = function(){
+                var tempQ = writeQ;
+                writeQ = [];
+                writeCB(tempQ).then(function(){
+                    log_dbg("_write() complete");
+                },function(e){
+                    log_err("error on writing to Backing",_id,e);
+                }).catch(function(err){
+                    log_err("exception on writing to Backing",_id,err);
+                });                
+            }
+
+            writeQ.push({key:key,val:val});
+            if(wrThrottle) {
+                if(writerTimeout) {
+                    return;
+                } else {
+                    writerTimeout = setTimeout(function(){
+                        if(writeQ.length > 0)
+                            doWrite();
+                        writerTimeout = null;
+                    },wrThrottle);
+                    doWrite();
+                }
+            } else {
+                doWrite();
+            }
+        };
+
+        var readQ = {};
+        var readerTimeout = null;
+        var promisesTokensByKey = {};
+
+        this._read = function(key) {
+            var doRead = function(Q) {
+                var tempQ = readQ;
+                readQ = {};
+                var cache_interface = new cacheBackingInterface(promisesTokensByKey);
+                promisesTokensByKey = {};
+                readCB(Object.keys(tempQ),cache_interface).then(function(cache_interface){
+                    if(!outQ || typeof outQ !== 'object') {
+                        log_err("Invalid resolve() from Backing read callback.");
+                        var proms = cache_interface._promises();
+                        var pairs = cache_interface._pairs();
+                        var keyz = Object.keys(pairs);
+                        for(var n=0;n<keyz.length;n++) {
+                            cache.set(keyz[n],pairs[keyz[n]],backingTTL);
+                            if(proms[keyz[n]]) { // fulfill any promises
+                               proms[keyz[n]].resolve(pairs[keyz[n]]);
+                               delete proms[keyz[n]];
+                            }
+                        }
+                        log_dbg("Backing",_selfBacking.id(),"set",keyz.length,"values");
+                        keyz = Object.keys(proms);
+                        for(var n=0;n<keyz.length;n++) {
+                            proms[keyz[n]].reject();
+                        }
+                        log_dbg("Backing",_selfBacking.id(),"had",keyz.length,"reject()s");
+                    }
+                });
+            };
+
+            if(promisesTokensByKey[key]) {
+                return promisesTokensByKey[key].promise;
+            } else {
+                promisesTokensByKey[key] = {}  
+                promisesTokensByKey[key].promise = new Promise(function(resolve,reject) {
+                    promisesTokensByKey[key].resolve = resolve;
+                    promisesTokensByKey[key].reject = reject;
+                });
+            }
+
+            if(!readerTimeout) {
+                if(rdThrottle) {
+                    readerTimeout = setTimeout(function(){
+                        var keyz = Object.keys(readQ);
+                        if(keyz.length > 0)
+                            doRead();
+                        readerTimeout = null;
+                    },rdThrottle);
+                    doRead();
+                } else {
+                    doRead();
+                }
+            }           
+            return promisesTokensByKey[key].promise;
+        }
+    };
+
+    this.setBacking = function(_backing) {
+        if(backing instanceof this.Backing) {
+            backing = _backing;
+        } else {
+            throw new TypeError("Backing must be instance of [smartcache instance].Backing");
+        }
+    }
+
 
     /**
      * The cacheDelegate is passed into the Updater, so the updater can
