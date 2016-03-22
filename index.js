@@ -63,9 +63,7 @@ var SmartCache = function(opts) {
 
     var cache = new jsCache();
 
-    var backing = null;
-
-
+    var backing = null;  // there can be only one Backing per SmartCache
 
    /**
      * The cacheBackingInterface is passed into the Backing to add keys into the cache.
@@ -97,30 +95,72 @@ var SmartCache = function(opts) {
 
     /**
      * Provides for a storage backing hooking for the cache.
-     * @param {function} writeCB        A callback which should return a Promise which resolves when the write is complete.
+     * @param {object} callbacks An object with specified callbacks for the Backing interface
+     *      {
+     *          writeCB: function(pairs) {},
+     *          readCB: function(pairs, cache) {},
+     *          onConnectCB: function(),
+     *          onDisconnectCB: function(),
+     *          deserializeCB: function(cache,limit),  // used to load the entire cache for storage
+     *          serializeCB: function(cache)     // used to serialize all data in cache.
+     *      }
+     * `writeCB` A callback which should return a Promise which resolves when the write is complete.
      * The callback is of the form:
      *      function(pairs) {
      *          // pairs is an Array of {key:'key',val:'val'} pairs 
      *          // which should be written to storage
      *      }
-     * @param {function} readCB         A callback which should return a Promise which resolves when a read is complete.
+     * `readCB` A callback which should return a Promise which resolves when a read is complete.
      *      function(pairs,cache) {
      *          // pairs is an Object of {'key': null} where 'key' should be filled in with the value @ key
      *          // the cache object is provided, the same as handed to the Updater object, to
      *          // all the readCB to provie opportunistic caching if it has new data to hand to the cache
      *          resolve(pairs);
      *      }
-     * @param {function} [onConnectCB]    An optional call back which should be called on initialization of the cache.
-     * @param {Function} [onDisconnectCB] An optional call back which will be called when the cache goes offline / is `shutdown`
+     * `onConnectCB` An optional call back which should be called on initialization of the cache.
+     * `onDisconnectCB` An optional call back which will be called when the cache goes offline / is `shutdown`
      * @param {object} [opts] If you want the backing to always keep values in cache, use opts.defaultTTL = null;
      */
-    this.Backing = function(writeCB,readCB,onConnectCB,onDisconnectCB,opts) {
+    this.Backing = function(callbacks,opts) {
         var _selfBacking = this;
 
         var wrThrottle = null;
         var rdThrottle = null;
-        var _id = base32.randomBase32();
+        var dlThrottle = null;
+        var _id = base32.randomBase32(8);
         var backingTTL = defaultTTL;
+
+        var proper = 0;
+        var writeCB,readCB,onConnectCB,onDisconnectCB,serializeCB,deserializeCB;
+        if(typeof callbacks === 'object') {
+            if(typeof callbacks.writeCB === 'function') {
+                writeCB = callbacks.writeCB;
+                proper++;
+            }
+            if(typeof callbacks.readCB === 'function') {
+                readCB = callbacks.readCB;
+                proper++;
+            }
+            if(typeof callbacks.deleteCB === 'function') {
+                deleteCB = callbacks.deleteCB;
+                proper++;
+            }            
+            if(typeof callbacks.onConnectCB === 'function') {
+                onConnectCB = callbacks.onConnectCB;
+            }
+            if(typeof callbacks.onDisconnectCB === 'function') {
+                onDisconnectCB = callbacks.onDisconnectCB;
+            }
+            if(typeof callbacks.serializeCB === 'function') {
+                serializeCB = callbacks.serializeCB;
+            }
+            if(typeof callbacks.deserializeCB === 'function') {
+                deserializeCB = callbacks.deserializeCB;
+            }
+        }
+        if(proper < 3) {
+            throw new TypeError("Backing is missing mandatory params or callbacks");
+        }
 
         if(opts && typeof opts === 'object') {
             if(opts.wrThrottle) {
@@ -146,13 +186,28 @@ var SmartCache = function(opts) {
             return _id;
         }
 
-        writeQ = [];
+        writeQ = {};
         writerTimeout = null;
+        deleteQ = {};
+
+        this._start = function() {
+            if(onConnectCB && typeof onConnectCB === 'function') {
+                var ret = onConnectCB();
+                if(ret && typeof ret === 'object' && typeof ret.then === 'function') {
+                    return ret;
+                } else {
+                    return Promise.resolve();
+                }
+            } else {
+                return Promise.resolve();
+            }
+        }
+
 
         this._write = function(key,val) {
             var doWrite = function(){
                 var tempQ = writeQ;
-                writeQ = [];
+                writeQ = {};
                 writeCB(tempQ).then(function(){
                     log_dbg("_write() complete");
                 },function(e){
@@ -162,7 +217,7 @@ var SmartCache = function(opts) {
                 });                
             }
 
-            writeQ.push({key:key,val:val});
+            writeQ[key] = val;
             if(wrThrottle) {
                 if(writerTimeout) {
                     return;
@@ -176,6 +231,36 @@ var SmartCache = function(opts) {
                 }
             } else {
                 doWrite();
+            }
+        };
+
+        this._delete = function(key) {
+            var doDelete = function(){
+                var tempQ = deleteQ;
+                deleteQ = [];
+                deleteCB(Object.keys(tempQ)).then(function(){
+                    log_dbg("_delete() complete");
+                },function(e){
+                    log_err("error on writing to Backing",_id,e);
+                }).catch(function(err){
+                    log_err("exception on writing to Backing",_id,err);
+                });                
+            }
+
+            deleteQ[key] = 1;
+            if(dlThrottle) {
+                if(deleteTimeout) {
+                    return;
+                } else {
+                    deleteTimeout = setTimeout(function(){
+                        if(deleteQ.length > 0)
+                            doDelete();
+                        deleteTimeout = null;
+                    },dlThrottle);
+                    doDelete();
+                }
+            } else {
+                doDelete();
             }
         };
 
@@ -212,11 +297,11 @@ var SmartCache = function(opts) {
                 });
             };
 
-            if(promisesTokensByKey[key]) {
+            if(promisesTokensByKey[key] && typeof promisesTokensByKey[key] === 'object') {
                 return promisesTokensByKey[key].promise;
             } else {
                 promisesTokensByKey[key] = {}  
-                promisesTokensByKey[key].promise = new Promise(function(resolve,reject) {
+                var ret_prom = promisesTokensByKey[key].promise = new Promise(function(resolve,reject) {
                     promisesTokensByKey[key].resolve = resolve;
                     promisesTokensByKey[key].reject = reject;
                 });
@@ -234,17 +319,29 @@ var SmartCache = function(opts) {
                 } else {
                     doRead();
                 }
-            }           
-            return promisesTokensByKey[key].promise;
+            }
+            return ret_prom;
         }
+
     };
 
     this.setBacking = function(_backing) {
-        if(backing instanceof this.Backing) {
-            backing = _backing;
-        } else {
-            throw new TypeError("Backing must be instance of [smartcache instance].Backing");
-        }
+        return new Promise(function(resolve,reject){
+            if(_backing instanceof smartcache.Backing) {
+                _backing._start().then(function(){
+                    backing = _backing;
+                    resolve();
+                },function(e){
+                    log_err("Error starting Backing",_backing.id());
+                    reject();
+                }).catch(function(e){
+                    log_err("@catch - exception on backing start():",e);
+                })
+            } else {
+                reject();
+                throw new TypeError("Backing must be instance of [smartcache instance].Backing");
+            }
+        });
     }
 
 
@@ -329,7 +426,7 @@ var SmartCache = function(opts) {
         }
         var _cb = callback;
         var _deleteCb = onDeleteCallback;
-        var _id = base32.randomBase32();
+        var _id = base32.randomBase32(8);
         var _shutdownCB = onShutdownCB;
 
 
@@ -539,12 +636,43 @@ var SmartCache = function(opts) {
                 log_dbg("** doing update for",key);
                 var data = cache.get(key);
                 data = updater.selfUpdate(data,key);
-                if(data != undefined) {
-                    cache.set(key,data,defaultTTL);
-                    // and reset interval
-                    timerTable[updater.id()] = setTimeout(updater._intervalCB,timeout);
+                if(data && typeof data === 'object' && typeof data.then === 'function') {
+                    data.then(function(rdata) {
+                        if(rdata != undefined) {
+                            cache.set(key,rdata,defaultTTL);
+                            if(backing) {
+                                backing._write(key,rdata);
+                            }
+                            // and reset interval
+                            timerTable[updater.id()] = setTimeout(updater._intervalCB,timeout);
+                        } else {
+                            smartcache.removeData(key);
+                        }                    
+                    },function(e){
+                        log_dbg("Got reject form Updater. Data gone. delete from cache.")
+                        if(backing) {
+                            backing._delete(key).then(function(){ // delete from storage first to prevent race
+                                smartcache.removeData(key);                    
+                            },function(e){
+                                log_err("Error on _delete from Backing:",e);
+                            });                            
+                        } else {
+                            smartcache.removeData(key);
+                        }
+                    }).catch(function(e){
+                        log_err("@catch:",e);
+                    });
                 } else {
-                    smartcache.removeData(key);
+                    if(data != undefined) {
+                        cache.set(key,data,defaultTTL);
+                        if(backing) {
+                            backing._write(key,data);
+                        }
+                        // and reset interval
+                        timerTable[updater.id()] = setTimeout(updater._intervalCB,timeout);
+                    } else {
+                        smartcache.removeData(key);
+                    }                    
                 }
             }.bind(undefined,key,updater);
             // if timeout exists, remove?
@@ -638,8 +766,14 @@ var SmartCache = function(opts) {
                     }
                     // update value
                     var v = u.set(val,e,key);
+                    if(backing) {
+                        backing._write(key,val);
+                    }
                     if(v !== undefined) {
                         cache.set(key,v,ttl);
+                        if(backing) {
+                            backing._write(key,val);
+                        }
                         if(u.getOpts().interval) {
                             makeTimeoutForKey(key,u);
                         }
@@ -647,7 +781,11 @@ var SmartCache = function(opts) {
                         // a return value of undefined from the updater
                         // means delete key
                         log_dbg("updater says delete key:",key);
-                        cache.del(key);
+                        if(backing) {
+                            backing._delete(key).then(cache.del(key));
+                        } else {    
+                            cache.del(key);                            
+                        }
                         removeUpdater(u_id);
                     }
                 }
@@ -658,6 +796,10 @@ var SmartCache = function(opts) {
 
             // simple case: just set the value
             cache.set(key,val,ttl);           
+            log_dbg("backing:",backing);
+            if(backing) {
+                backing._write(key,val);
+            }
             // if there is an updater, add it
             if(updater) {
                 if(e !== undefined) {
@@ -673,13 +815,24 @@ var SmartCache = function(opts) {
 
     /**
      * Gets data from the cache.
-     * @param key
+     * @param {String} key A string of the key caller wants
+     * @param {object} [opts] Options are:
+     *     {
+     *         prefer: 'storage'  // | 'updater' - If prefer 'storage' and the key is not in cache
+     *                            // then the backing store will be used if available and it has the key
+     *                            // otherwise an updater will be tried (default, if backing is present)
+     *                            // If prefer 'updater' then the backing store will be ignored
+     *     }
      * @return {Promise} which resolves if the data is retrieved. If the data can not be
      * retrieved then the Promise rejects. If the data is just `undefined`, the Promise resolves with `undefined`.
      */
-    this.getData = function(key) {
+    this.getData = function(key,opts) {
         stats.allGets++;
         var d = cache.get(key);
+        var prefer = null;
+        if(opts && opts.prefer) {
+            prefer = opts.prefer;
+        }
         if(d !== undefined) {
             stats.hits++;
             // if its in cache, fast-track it
@@ -694,11 +847,31 @@ var SmartCache = function(opts) {
                 resolve(d);
                 return;
             }
-            if(!queueForNotifyByKey(key,resolve,reject)) {                
-                log_dbg("no key:",key);
-                reject(); // no data for that key
-                return;
-            }
+
+            if(prefer == 'updater' || !backing) {
+                log_dbg("   -> prefer says ignore backing storage");
+                if(!queueForNotifyByKey(key,resolve,reject)) {
+                    log_dbg("no key:",key);
+                    reject(); // no data for that key
+                    return;
+                }
+            } else {
+                backing._read(key).then(function(r){
+                    resolve(r);
+                    // TODO: run updater anyway?
+                    // we had to use the backing to get the value, but since it was asked for
+                    // should it be updater?
+                },function(err){
+                    log_dbg("   -> !! no answer from storage. trying updater.");
+                    if(!queueForNotifyByKey(key,resolve,reject)) {
+                        log_dbg("no key or updater for:",key);
+                        reject(); // no data for that key
+                    }
+                }).catch(function(e){
+                    log_err("@catch - error",e);
+                    reject();
+                })
+            }   
             stats.misses++;
             log_dbg("Key",key,"not in cache but have updater. Updating.");
         });
@@ -822,3 +995,4 @@ var SmartCache = function(opts) {
 }
 
 module.exports = SmartCache;
+module.exports.makeIndexedDBBacking = require('./indexedDBBacking.js');
