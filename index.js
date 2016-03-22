@@ -7,24 +7,24 @@ var base32 = require('./base32.js');
 
 var log_err = function() {
     if(global.log)
-        log.error.apply(undefined,arguments);
+        log.error.apply(log,arguments);
     else {
         var args = Array.prototype.slice.call(arguments);
         args.unshift("ERROR");
         args.unshift("[SmartCache]");
-        console.error.apply(undefined,args);
+        console.error.apply(console,args);
     }
 
 };
 
 var log_warn = function() {
     if(global.log)
-        log.warn.apply(undefined,arguments);
+        log.warn.apply(log,arguments);
     else {
         var args = Array.prototype.slice.call(arguments);
         args.unshift("WARN");
         args.unshift("[SmartCache]");
-        console.error.apply(undefined,args);
+        console.error.apply(console,args);
     }
 };
 
@@ -33,9 +33,9 @@ var ON_log_dbg = function() {
     args.unshift(" {"+(new Date).getTime()+"}");
     args.unshift("[SmartCache]");
     if(global.log)
-        log.debug.apply(undefined,args);
+        log.debug.apply(log,args);
     else
-        console.log.apply(undefined,args);
+        console.log.apply(console,args);
 };
 
 var SmartCache = function(opts) {
