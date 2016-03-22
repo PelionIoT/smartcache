@@ -1,6 +1,7 @@
 /**
  * Created by ed on 3/19/16.
  */
+var Promise = require('es6-promise').Promise;
 
 var jsCache = require('js-cache');
 var base32 = require('./base32.js');
