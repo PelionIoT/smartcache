@@ -37,8 +37,18 @@ var makeIndexedDBBacking = function(cache,dbname,opts) {
 
 	var log_dbg = function() {}
 
+
+	var rdThrottle = undefined;	
+	var wrThrottle = undefined;
+	var dlThrottle = undefined;
+
 	if(opts) {
 		if(opts.debug_mode) log_dbg = ON_log_dbg;
+		if(opts.dbThrottle) {
+			rdThrottle = opts.dbThrottle;
+			wrThrottle = opts.dbThrottle;
+			dlThrottle = opts.dbThrottle;
+		}
 	}
 
 	var BACKING_VERSION = 1; // if we make changes to the database - then increment this
@@ -142,7 +152,7 @@ var makeIndexedDBBacking = function(cache,dbname,opts) {
 			return new Promise(function(resovle,reject){
 				var totalDels = 0;
 
-				var trans = DB.transaction([KEYSTORE]);  // make transaction
+				var trans = DB.transaction([KEYSTORE],"readwrite");  // make transaction
 				var store = trans.objectStore(KEYSTORE);				
 
 				var checkComplete = function() {
@@ -182,7 +192,7 @@ var makeIndexedDBBacking = function(cache,dbname,opts) {
 					log_err("Can't get indexedDB db why??:",event);
 				};
 				request.onsuccess = function(event) {
-			     	log_err("makeIndexDBBacking..onsuccess");
+			     	log_dbg("makeIndexDBBacking..onsuccess");
 					DB = event.target.result;
 					DB.onerror = genericErrorHandler;
 					resolve();
@@ -212,7 +222,10 @@ var makeIndexedDBBacking = function(cache,dbname,opts) {
 			});
 		}
 	},{
-		id: "indexedDBBack:"+dbname
+		id: "indexedDBBack:"+dbname,
+		rdThrottle: rdThrottle,
+		dlThrottle: dlThrottle,
+		wrThrottle: wrThrottle
 	});
 
 }

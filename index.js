@@ -51,9 +51,7 @@ var SmartCache = function(opts) {
     var defaultTTL = undefined;
     var defaultThrottle = 2000;
 
-    var log_dbg = function() {
-
-    };
+    var log_dbg = function() {};
 
     if(opts && typeof opts === 'object') {
         if(opts.debug_mode) log_dbg = ON_log_dbg;
@@ -856,6 +854,7 @@ var SmartCache = function(opts) {
                     return;
                 }
             } else {
+                log_dbg("trying backing for:",key);
                 backing._read(key).then(function(r){
                     resolve(r);
                     // TODO: run updater anyway?
@@ -878,7 +877,6 @@ var SmartCache = function(opts) {
     }
 
     this.removeData = function(key) {
-
         var u_id = updaterTableByKey[key];
         var u = updatersById[u_id];
         if(u) {
@@ -886,14 +884,20 @@ var SmartCache = function(opts) {
             u.setDelete(e,key);
         }
         deleteTableByKey[key] = 1;
-        cache.del(key);
+        // FIXME FIXME 
+        delete updaterTableByKey[key];
         removeUpdater(u_id);
         var waits = pendingByKey[key];
+        cache.del(key);
+        if(backing) {
+            backing._delete(key);
+        }
         if(waits) {
             // So, if people were waiting on this to update, and 
             // meanwhile you delete, just reject all the pending Promises
             waits.reject(); 
         }
+        return true; // always succeeds
     }
 
 
@@ -901,6 +905,11 @@ var SmartCache = function(opts) {
     // needs to run
     
     cache.on('del',function(key){
+        if(deleteTableByKey[key]) {
+            log_dbg("ignore notification of deleted key",key);
+            delete deleteTableByKey[key];
+            return;
+        }
         var ttl = undefined;
         if(defaultTTL) {
             ttl = defaultTTL;

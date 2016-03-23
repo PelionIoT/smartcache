@@ -11,18 +11,29 @@
         height: 100%;
       }
     </style>
+    <link rel="stylesheet" href="/public/nodeunit.css" type="text/css" />
+    <script src="/public/js/nodeunit.js"></script>
 
 	<script type="text/javascript">
-	    window.onerror = function(message, url, lineNumber) {
-	        console.log("WINDOW Error: "+message+" in "+url+" at line "+lineNumber);
-	    }
+	    // window.onerror = function(message, url, lineNumber) {
+	    //     console.log("WINDOW Error: "+message+" in "+url+" at line "+lineNumber);
+	    // }
 	</script>
 
-	Test indexdb driver. Open debugger console view.
 
     <script src="/public/js/bundle.js"></script>
     <script src="/backing_store.js"></script>
 
 </head>
+<body>
+  Test indexdb driver. Open debugger console view.
+  <h1 id="nodeunit-header">IndexedDBBacking Store Test</h1>
+
+    <script>
+      nodeunit.run({
+        'backing_store': backing_store
+      });
+    </script>
+</body>
 </html>
 

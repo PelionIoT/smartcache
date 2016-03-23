@@ -11,6 +11,13 @@ SELF="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
 echo "running npm install... need dev dependencies"
 npm install
+# if [ ! -d $SELF/node_modules/nodeunit/dist/browser ]; then
+# 	cd $SELF/node_modules/nodeunit
+# 	make browser
+# 	cd $SELF
+# fi
+cp $SELF/node_modules/nodeunit/examples/browser/nodeunit.js $SELF/tests/public/js
+cp $SELF/node_modules/nodeunit/share/nodeunit.css $SELF/tests/public
 mkdir -p $SELF/tests/public/js
 echo "Browserifying..."
 # devicejs build: see wigwag-core-modules/APIProxy browserify -r jquery -r ./devicejsBrowser.js:devicejs > ./static/scripts/devicejs.js
