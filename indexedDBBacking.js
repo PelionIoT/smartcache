@@ -156,8 +156,8 @@ var makeIndexedDBBacking = function(cache,dbname,opts) {
 				var store = trans.objectStore(KEYSTORE);				
 
 				var checkComplete = function() {
-					if(totalDels >= pairs.length) {
-						resovle(ret);
+					if(totalDels >= keys.length) {
+						resovle();
 					}
 					// FIXME - need to figure out how to return errors
 				}
