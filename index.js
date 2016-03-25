@@ -582,9 +582,18 @@ var SmartCache = function(opts) {
         var _shutdownCB = onShutdownCB;
 
         var _throttleTimer = null;
+        var _intervalTimer = null;
+        var shutdown = false;
         // var _throttleCbQ = [];
 
         this.shutdown = function() {
+            shutdown = true;
+            if(_throttleTimer) {
+                clearTimeout(_throttleTimer);
+            }
+            if(_intervalTimer) {
+                clearTimeout(_intervalTimer);
+            }
             if(_shutdownCB && typeof _shutdownCB === 'function') {
                 _shutdownCB();
             }
@@ -608,6 +617,12 @@ var SmartCache = function(opts) {
             }
             if(options.throttle) {
                 throttle = options.throttle;
+            }
+            if(options.interval && typeof options.interval != 'number') {
+                throw new TypeError("options.interval must be a number");
+            }
+            if(options.interval && options.throttle && options.interval < options.throttle) {
+                throw new RangeError("options.interval must be > options.throttle");
             }
         } else {
             options = {};
@@ -666,8 +681,13 @@ var SmartCache = function(opts) {
 
 
             var doUpdate = function(){
-                if(!currentDelgCache.isDirty()) 
+                if(shutdown) {
                     return;
+                }
+                if(!currentDelgCache.isDirty() && !options.interval) {
+                    log_dbg("skipping update, cache not dirty.");
+                    return;
+                }
 //                var tempQ = updateTokenQ;
 //                updateTokenQ = {};
                 var delg = currentDelgCache;
@@ -677,11 +697,24 @@ var SmartCache = function(opts) {
                 var ret = _cb.call(_selfUpdater,delg);
                 if(ret && typeof ret === 'object' && typeof ret.then === 'function') {
                     ret.then(function(r){
+                        if(shutdown) {
+                            return;
+                        }
                         if(currentDelgCache.isDirty()) {
                             _throttleTimer = setTimeout(function(){
+                                log_dbg("THROTTLE: in timeout for throttle");
                                 doUpdate();
                             },throttle);
+                            log_dbg("THROTTLE: Throttle set, next call in",throttle,"ms");
                         } else {
+                            if(options.interval) {
+                                _intervalTimer = setTimeout(function(){
+                                    log_dbg("INTERVAL: in timeout for interval");
+                                    _intervalTimer = null;
+                                    doUpdate();
+                                },options.interval);
+                                log_dbg("INTERVAL: Timer set, next call in",options.interval,"ms");
+                            }
                             _throttleTimer = null;
                         }
                         // completeWaits_resolve(_throttleCbQ,r);
@@ -693,6 +726,14 @@ var SmartCache = function(opts) {
                                 doUpdate();
                             },throttle);
                         } else {
+                            if(options.interval) {
+                                _intervalTimer = setTimeout(function(){
+                                    log_dbg("INTERVAL: in timeout for interval");
+                                    _intervalTimer = null;
+                                    doUpdate();
+                                },options.interval);
+                                log_dbg("INTERVAL: Timer set, next call in",options.interval,"ms");
+                            }
                             _throttleTimer = null;
                         }
 
@@ -706,6 +747,14 @@ var SmartCache = function(opts) {
                                 doUpdate();
                             },throttle);
                         } else {
+                            if(options.interval) {
+                                _intervalTimer = setTimeout(function(){
+                                    log_dbg("INTERVAL: in timeout for interval");
+                                    _intervalTimer = null;
+                                    doUpdate();
+                                },options.interval);
+                                log_dbg("INTERVAL: Timer set, next call in",options.interval,"ms");
+                            }                            
                             _throttleTimer = null;
                         }
 
@@ -724,6 +773,12 @@ var SmartCache = function(opts) {
                                  // still in throttle window
                 return;
             } else {
+                if(_intervalTimer) {
+                    // if we are also waiting on an interval, clear it
+                    // (it will get reset after this call completes)
+                    log_dbg("Canceling INTERVAL");
+                    clearTimeout(_intervalTimer);
+                }
                 doUpdate();
             }
         }
@@ -1108,7 +1163,10 @@ var SmartCache = function(opts) {
                         reject(e);
                     });
                 } else {
-                    log_dbg("   oops - no Updater!");
+
+                    //FIXME FIXME -->
+
+                    log_dbg("   no Updater, no Data! [",key,"]");
                     // no updater, no data, just nothing:
                     resolve();
                 }
@@ -1157,7 +1215,10 @@ var SmartCache = function(opts) {
     }
 
     this.removeData = function(key) {
-        return _deleteKey(key,'user');
+        var uid = undefined;
+        var u = getUpdaterByKey(key);
+        if(u) uid = u.id();
+        return _deleteKey(key,'user',uid);
     }
 
     // handle events - if an entry is kicked out of cached, its updater
