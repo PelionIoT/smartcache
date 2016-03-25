@@ -702,18 +702,18 @@ var SmartCache = function(opts) {
                         }
                         if(currentDelgCache.isDirty()) {
                             _throttleTimer = setTimeout(function(){
-                                log_dbg("THROTTLE: in timeout for throttle");
+                                log_dbg("THROTTLE: "+_id+" in timeout for throttle");
                                 doUpdate();
                             },throttle);
-                            log_dbg("THROTTLE: Throttle set, next call in",throttle,"ms");
+                            log_dbg("THROTTLE: "+_id+" Throttle set, next call in",throttle,"ms");
                         } else {
                             if(options.interval) {
                                 _intervalTimer = setTimeout(function(){
-                                    log_dbg("INTERVAL: in timeout for interval");
+                                    log_dbg("INTERVAL: "+_id+" in timeout for interval");
                                     _intervalTimer = null;
                                     doUpdate();
                                 },options.interval);
-                                log_dbg("INTERVAL: Timer set, next call in",options.interval,"ms");
+                                log_dbg("INTERVAL: "+_id+" Timer set, next call in",options.interval,"ms");
                             }
                             _throttleTimer = null;
                         }
@@ -728,11 +728,11 @@ var SmartCache = function(opts) {
                         } else {
                             if(options.interval) {
                                 _intervalTimer = setTimeout(function(){
-                                    log_dbg("INTERVAL: in timeout for interval");
+                                    log_dbg("INTERVAL: "+_id+" in timeout for interval");
                                     _intervalTimer = null;
                                     doUpdate();
                                 },options.interval);
-                                log_dbg("INTERVAL: Timer set, next call in",options.interval,"ms");
+                                log_dbg("INTERVAL: "+_id+" Timer set, next call in",options.interval,"ms");
                             }
                             _throttleTimer = null;
                         }
@@ -749,11 +749,11 @@ var SmartCache = function(opts) {
                         } else {
                             if(options.interval) {
                                 _intervalTimer = setTimeout(function(){
-                                    log_dbg("INTERVAL: in timeout for interval");
+                                    log_dbg("INTERVAL: "+_id+" in timeout for interval");
                                     _intervalTimer = null;
                                     doUpdate();
                                 },options.interval);
-                                log_dbg("INTERVAL: Timer set, next call in",options.interval,"ms");
+                                log_dbg("INTERVAL: "+_id+" Timer set, next call in",options.interval,"ms");
                             }                            
                             _throttleTimer = null;
                         }
@@ -942,10 +942,11 @@ var SmartCache = function(opts) {
     var addUpdater = function(key,updater) {
         if(key && updater && updater instanceof smartcache.Updater) {
 //            removeUpdater(updater.id()); // remove an old updater with same ID if it exists
-            updaterTableByKey[key] = updater.id();
+            var uid = updater.id();
+            updaterTableByKey[key] = uid;
             updater._ref++;
-            log_dbg("Adding updater:",updater.id(),"(ref =",updater._ref+")");
-            updatersById[updater.id()] = updater;
+            log_dbg("Adding updater:",uid,"(ref =",updater._ref+")");
+            updatersById[uid] = updater;
 
             // makeTimeoutForKey(key,updater);
         } else {
@@ -1296,6 +1297,7 @@ var SmartCache = function(opts) {
         }
         var updaters = Object.keys(updatersById);
         for(var n=0;n<updaters.length;n++) {
+            log_dbg("updater " + updaters[n] + " shutdown");
             updatersById[updaters[n]].shutdown();
             delete updatersById[updaters[n]];
         }

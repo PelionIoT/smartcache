@@ -20,7 +20,7 @@ var VALS = {
 
 var DOGS = {
 	'Buster' : {
-		type: 'puppy'
+		type: 'puppy',
 		breed: 'mutt',
 		weight: 10
 	},
@@ -147,6 +147,7 @@ module.exports.basic_get_set = function(test) {
 		id: 'testUpdater'
 	});
 
+	var DOGS_SHUTDOWN = false;
 
 	var dogUpdater = new cache.Updater(function(cache){
 		// this - refers to the Updater
@@ -181,7 +182,8 @@ module.exports.basic_get_set = function(test) {
 		                        // critical error happened.
 	},
 	function(){
-		console.trace("[testUpdater] OnShutdown");
+		console.trace("[dogUpdater] OnShutdown");
+		DOGS_SHUTDOWN = true;
 	},
 	{
 		interval: 5000,
@@ -224,6 +226,47 @@ module.exports.basic_get_set = function(test) {
 		updater: testUpdater
 	});
 
+	cache.setData('Buster',DOGS['Buster'],{
+		updater: dogUpdater
+	});
+	cache.setData('Bartholomew',DOGS['Bartholomew'],{
+		updater: dogUpdater
+	});
+	cache.setData('Yipper',DOGS['Yipper'],{
+		updater: dogUpdater
+	});
+
+
+	var dogTestInterval = setInterval(function(){
+		cache.getData('Buster').then(function(d){
+			test.ok(d.breed,"returned Dog object");
+			if(d.age) {
+				d.age++;
+			} else {
+				d.age = 1;
+			}
+		})
+
+		cache.getData('Bartholomew').then(function(d){
+			test.ok(d.breed,"returned Dog object");
+			if(d.age) {
+				d.age++;
+			} else {
+				d.age = 5;
+			}
+		})
+
+		cache.getData('Yipper').then(function(d){
+			test.ok(d.breed,"returned Dog object");
+			if(d.age) {
+				d.age++;
+			} else {
+				d.age = 11;
+			}
+		})
+
+	},1000);
+
 	// setTimeout(function(){
 	// 	cache.setData('key1',6);	
 	// },4000);
@@ -251,13 +294,11 @@ module.exports.basic_get_set = function(test) {
 		console.log("key1:",d);
 		showKey('key2');
 		showKey('key3');
-		showKey('DOG1');
-		showKey('DOG2');
-		showKey('DOG3');
+		showKey('Bartholomew');
+		showKey('Buster');
+		showKey('Yipper');
 		console.log("Stats:",cache.getStats());
 	},1000);
-
-
 
 	setTimeout(function(){
 		console.log("**** removed key1");
@@ -271,13 +312,49 @@ module.exports.basic_get_set = function(test) {
 		},function(){
 			test.ok(false,"Failed to removeData()");
 		})
-
 	},10000);
 
 //			test.done();
 
+
 	setTimeout(function(){
-		clearInterval(printInterval);
+		clearInterval(dogTestInterval);
+		var proms = [];
+		proms.push(
+		cache.removeData('Bartholomew').then(function(){
+			test.ok(true,"Deletion happened");
+		},function(){
+			test.ok(false,"Failure");
+		}));
+		proms.push(
+		cache.removeData('Buster').then(function(){
+			test.ok(true,"Deletion happened");
+		},function(){
+			test.ok(false,"Failure");
+		}));
+		proms.push(
+		cache.removeData('Yipper').then(function(){
+			test.ok(true,"Deletion happened");
+		},function(){
+			test.ok(false,"Failure");
+		}));
+		Promise.all(proms).then(function(){
+			test.ok(true,"All deletions happened");
+		}).then(function(){
+			var stats = cache.getStats();
+			test.ok(stats.numUpdaters == 1,"Should only have one updater left.");
+			test.ok(DOGS_SHUTDOWN == true,"The dogUpdater was shutdown - and onShutdown called.");
+		},function(){
+			test.ok(false,"Failure to delete all dogs.");
+		}).catch(function(){
+			test.ok(false,"Exception happened in Promsie chain.");
+		})
+	},15000);
+
+
+
+	setTimeout(function(){
+		clearInterval(printInterval);	
 		cache.removeData('key2');
 		cache.getData('key2').then(function(d){
 			test.ok(d==undefined,"Test deletion.");
