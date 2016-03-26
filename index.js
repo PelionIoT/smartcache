@@ -432,8 +432,10 @@ var SmartCache = function(opts) {
 
     // These three function to be used by the Updater implementer:
     cacheDelegate.prototype.set = function(key,val,ttl){
-//        log_dbg("cacheDelegate:",key,val,ttl);
+        log_dbg("cacheDelegate:",key,val,ttl);
+        log_dbg("updater:",this._updater)
         _setData(key,val,ttl,this._updater);
+        log_dbg('past set')
         if(this._readQ[key]) { // readQ - if the data is 'set' by the Updater
                                // then it has accomplished the 'read'
             this._readQ[key].resolve();
@@ -444,8 +446,6 @@ var SmartCache = function(opts) {
         return cache.get(key);
     }
     cacheDelegate.prototype.del = function(key) {
-        console.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-
         var uid = this._updater.id();
         console.log("uid = ",uid);
         deleteTableByKey[key] = 1; // mark to ingore when we get 'del' event
@@ -865,80 +865,6 @@ var SmartCache = function(opts) {
         return null;
     }
 
-    // var makeTimeoutForKey = function(key,updater) {
-    // var makeGetTimeoutForKey = function(key,updater) {
-    //     var timeout = updater.getOpts().interval;
-
-
-//         var timeout = updater.getOpts().interval;
-//         if(timeout && timeout > 0) { // if timeout is set
-//             updater._intervalCB = function(key,updater){
-//                 log_dbg("** doing update for",key);
-// //                var data = cache.get(key);
-//                 var data = updater.selfUpdate();
-//                 if(data && typeof data === 'object' && typeof data.then === 'function') {
-//                     data.then(function() {  
-//                         // the cache is already updated via the delegate
-//                         var d = cache.get(key);
-//                         if(d !== undefined) {
-//                             // and reset interval
-//                             timerTable[updater.id()] = setTimeout(updater._intervalCB,timeout);                            
-//                         }
-//                         // if(rdata != undefined) {
-//                         //     cache.set(key,rdata,defaultTTL);
-//                         //     if(backing) {
-//                         //         backing._write(key,rdata);
-//                         //     }
-//                         //     // and reset interval
-//                         //     timerTable[updater.id()] = setTimeout(updater._intervalCB,timeout);
-//                         // } else {
-//                         //     smartcache.removeData(key);
-//                         // }                    
-//                     },function(e){
-//                         log_err("got a reject() from Updater!");
-//                         // log_dbg("Got reject form Updater. Data gone. delete from cache.")
-//                         // if(backing) {
-//                         //     backing._delete(key).then(function(){ // delete from storage first to prevent race
-//                         //         smartcache.removeData(key);                    
-//                         //     },function(e){
-//                         //         log_err("Error on _delete from Backing:",e);
-//                         //     });                            
-//                         // } else {
-//                         //     smartcache.removeData(key);
-//                         // }
-//                     }).catch(function(e){
-//                         log_err("@catch:",e);
-//                     });
-//                 } else {
-//                     if(data != undefined) {
-//                         cache.set(key,data,defaultTTL);
-//                         if(backing) {
-//                             backing._write(key,data);
-//                         }
-//                         // and reset interval
-//                         timerTable[updater.id()] = setTimeout(updater._intervalCB,timeout);
-//                     } else {
-//                         smartcache.removeData(key);
-//                     }                    
-//                 }
-//             }.bind(undefined,key,updater);
-//             // if timeout exists, remove?
-//             var tid = timerTable[updater.id()];
-//             if(tid !== undefined) {
-//                 clearTimeout(tid);
-//             }
-//             tid = setTimeout(updater._intervalCB,timeout);
-//             timerTable[updater.id()] = tid;
-//         } else {
-//             log_dbg("Updater",updater.id(),"has no interval. Clearing any existing");
-//             var tid = timerTable[updater.id()];
-//             if(tid !== undefined) {
-//                 clearTimeout(tid);
-//                 delete timerTable[updater.id()];
-//             }
-//         }
-    // }
-
     var addUpdater = function(key,updater) {
         if(key && updater && updater instanceof smartcache.Updater) {
 //            removeUpdater(updater.id()); // remove an old updater with same ID if it exists
@@ -970,7 +896,7 @@ var SmartCache = function(opts) {
         cache.set(key,val,ttl);
         updaterTableByKey[key] = updater.id();
         if(backing) {
-            backing._write(key,rdata);
+            backing._write(key,val);
         }
     }
 
@@ -982,7 +908,6 @@ var SmartCache = function(opts) {
         var u = getUpdaterByKey(key);
         if(u && ((source != 'updater') || 
             (updaterid != u_id))) {
-            log_dbg("here1",updaterid,u_id);
             // the 'key' has an updater AND
             // if its NOT an updater calling, or its an Updater updating something
             // for which its not the Updater (whew)
@@ -992,7 +917,6 @@ var SmartCache = function(opts) {
 
             }); 
         } else {
-                        log_dbg("here2");
             if(u_id) {
                 delete updaterTableByKey[key];
                 removeUpdater(u_id);             
@@ -1240,44 +1164,6 @@ var SmartCache = function(opts) {
             if(u_id) {
                 var u = updatersById[u_id];
                 var ret = u.removeData(key);
-
-                // if(ret && typeof ret === 'object' && typeof ret.then === 'function') {
-                //     // got a Promsie - so wait until complete.
-                //     log_dbg("Updater returned Promise - will wait for it.");
-                //     if(!pendingByKey[key]) {
-                //         pendingByKey[key] = new WaitQueue();
-                //     }
-                //     // make the WaitQueue - so that when other looks for this key
-                //     // they know that a value is being retrieved.
-                //     ret.then(function(result){
-                //         log_dbg("pending: got resolve for key",key);
-                //         cache.set(key,ret,ttl);
-                //         var waitQ = pendingByKey[key];
-                //         if(waitQ) {
-                //             waitQ.resolve(result);
-                //         }
-                //         delete pendingByKey[key];
-                //     },function(err){
-                //         log_dbg("pending: got reject! for key",key);
-                //         if(err) {
-                //             log_err("Got error in pending updater:",err);
-                //         }
-                //         var waitQ = pendingByKey[key];
-                //         if(waitQ) {
-                //             waitQ.reject(result);
-                //         }
-                //         delete pendingByKey[key];
-                //     }).catch(function(err){
-                //         log_err("An exception / error occurred in updater:",err);
-                //         var waitQ = pendingByKey[key];
-                //         if(waitQ) {
-                //             waitQ.reject(result);
-                //         }
-                //         delete pendingByKey[key];
-                //     });
-                // } else {
-                //     log_err("Bad response from Updater",u_id);
-                // }
             }
             delete deleteTableByKey[key];
         } else {

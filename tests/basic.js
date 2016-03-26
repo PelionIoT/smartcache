@@ -120,6 +120,8 @@ module.exports.basic_get_set = function(test) {
 		test.ok(true,"set fulfilled.");
 	});
 
+	
+
 	setTimeout(function(){
 		SAY("@2500ms - TTL out - see if data 'key1' updated.");
 		cache.getData('key1').then(function(d){
