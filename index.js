@@ -270,42 +270,55 @@ var SmartCache = function(opts) {
             var doRead = function(Q) {
                 var tempQ = readQ;
                 readQ = {};
+//console.trace("doRead 1")
                 var cache_interface = new cacheBackingInterface(promisesTokensByKey);
                 promisesTokensByKey = {};
+//log_dbg("doRead 1.1")                
                 readCB(Object.keys(tempQ),cache_interface).then(function(cache_interface){
-                    if(!outQ || typeof outQ !== 'object') {
-                        log_err("Invalid resolve() from Backing read callback.");
-                        var proms = cache_interface._promises();
-                        var pairs = cache_interface._pairs();
-                        var keyz = Object.keys(pairs);
-                        for(var n=0;n<keyz.length;n++) {
-                            cache.set(keyz[n],pairs[keyz[n]],backingTTL);
-                            if(proms[keyz[n]]) { // fulfill any promises
-                               proms[keyz[n]].resolve(pairs[keyz[n]]);
-                               delete proms[keyz[n]];
-                            }
-                        }
-                        log_dbg("Backing",_selfBacking.id(),"set",keyz.length,"values");
-                        keyz = Object.keys(proms);
-                        for(var n=0;n<keyz.length;n++) {
-                            proms[keyz[n]].reject();
-                        }
-                        log_dbg("Backing",_selfBacking.id(),"had",keyz.length,"reject()s");
+                    if(!(cache_interface instanceof cacheBackingInterface)) {
+                        log_err("Invalid resolve() from Backing read callback. Trouble will insue.");
+                        return;
                     }
+//log_dbg("doRead 2")
+                    // if(!outQ || typeof outQ !== 'object') {
+                        
+//log_dbg("doRead 3")
+
+                    var proms = cache_interface._promises(); // the promisesTokensByKey
+                    var pairs = cache_interface._pairs();
+                    var keyz = Object.keys(pairs);
+                    for(var n=0;n<keyz.length;n++) {
+//log_dbg("doRead 4")
+                        cache.set(keyz[n],pairs[keyz[n]],backingTTL);
+                        if(proms[keyz[n]]) { // fulfill any promises
+                           proms[keyz[n]].resolve(pairs[keyz[n]]);
+                           delete proms[keyz[n]];
+                        }
+                    }
+                    log_dbg("Backing",_selfBacking.id(),"set",keyz.length,"values");
+                    keyz = Object.keys(proms);
+                    for(var n=0;n<keyz.length;n++) {
+                        proms[keyz[n]].reject();
+                    }
+                    log_dbg("Backing",_selfBacking.id(),"had",keyz.length,"reject()s");
+                    // }
                 });
             };
-
+//log_dbg("_read 0")
             if(promisesTokensByKey[key] && typeof promisesTokensByKey[key] === 'object') {
                 return promisesTokensByKey[key].promise;
             } else {
                 promisesTokensByKey[key] = {}  
+//log_dbg("_read 1")
                 var ret_prom = promisesTokensByKey[key].promise = new Promise(function(resolve,reject) {
                     promisesTokensByKey[key].resolve = resolve;
                     promisesTokensByKey[key].reject = reject;
                 });
+                readQ[key] = 1;
             }
 
             if(!readerTimeout) {
+                log_dbg("_read 2")
                 if(rdThrottle) {
                     readerTimeout = setTimeout(function(){
                         var keyz = Object.keys(readQ);
@@ -313,8 +326,10 @@ var SmartCache = function(opts) {
                             doRead();
                         readerTimeout = null;
                     },rdThrottle);
+//log_dbg("_read 2.2")
                     doRead();
                 } else {
+//log_dbg("_read 2.2")
                     doRead();
                 }
             }
@@ -322,6 +337,8 @@ var SmartCache = function(opts) {
         }
 
     };
+
+
 
     this.setBacking = function(_backing) {
         return new Promise(function(resolve,reject){
@@ -1079,6 +1096,7 @@ var SmartCache = function(opts) {
                 if(u) {
                     log_dbg("Key",key,"not in cache but have updater. Updating.");
                     u.getData(key).then(function(){
+                        stats.misses++;
                         resolve(cache.get(key));
                     },function(err){
                         log_err("Error back from Updater - no backing.",err);
@@ -1104,26 +1122,32 @@ var SmartCache = function(opts) {
             } else {
                 log_dbg("trying backing for:",key);
                 backing._read(key).then(function(r){
+                    log_dbg("got read resolve");
+                    stats.misses++;
                     resolve(r);
                     // TODO: run updater anyway?
                     // we had to use the backing to get the value, but since it was asked for
                     // should it be updater?
                 },function(err){
-                    log_dbg("   -> !! no answer from storage. trying updater.");
+                    log_dbg("   -> reject from storage. trying updater.");
                     var u = getUpdaterByKey(key);
-                    log_dbg("Key",key,"not in cache but have updater. Updating.");
                     if(u) {
+                        log_dbg("Key",key,"not in cache but have updater. Updating.");
                         u.getData(key).then(function(){
+                            log_dbg("Updater resolve()d");
                             resolve(cache.get(key));
+                            stats.misses++;
                         },function(err){
-                            log_err("Error back from Updater - no backing.",err);
+                            log_err("Error back from Updater.",err);
                             reject(err);
                         }).catch(function(e){
                             log_err("@catch ",e);
                             reject(e);
                         });
                     } else {
-                        // no updater, no data, just nothing:
+                        log_dbg("No updater. No data.");
+                        // no updater, no data, just nothing. ok.
+                        // resolve to undefined
                         resolve();
                     }
                     // if(!queueForNotifyByKey(key,resolve,reject)) {
@@ -1134,7 +1158,6 @@ var SmartCache = function(opts) {
                     log_err("@catch - error",e);
                     reject();
                 });
-                stats.misses++;
             }
         });
     }

@@ -200,10 +200,10 @@ this.backing_store =  {
 				cache.clear();
 				console.log("ok - done.");
 
-	     		var ret = cache.getData('key1').then(function(){
-					TEST.ok(false,"'key1' should be deleted.");
+	     		var ret = cache.getData('key1').then(function(d){
+					TEST.ok(d==undefined,"'key1' should be deleted.");
 				},function(){
-					TEST.ok(true,"'key1' is deleted.");
+					TEST.ok(false,"This should never reject");
 				});
 	     		console.log("RET=",ret);
 

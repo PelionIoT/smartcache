@@ -117,6 +117,8 @@ var makeIndexedDBBacking = function(cache,dbname,opts) {
 			return new Promise(function(resovle,reject){
 				var totalReads = 0;
 
+				log_dbg("in readCB()")
+
 				var checkComplete = function() {
 					if(totalReads >= pairs.length) {
 						resovle(cache);
@@ -137,15 +139,29 @@ var makeIndexedDBBacking = function(cache,dbname,opts) {
 					request.onsuccess = function(event) {
 					  // Do something with the request.result!
 	//				  alert("Name for SSN 444-44-4444 is " + request.result.name);
-						cache.set(key,request.result.val);
+						if(typeof request.result === 'object') {
+							cache.set(key,request.result.val);
+						} else {
+							log_dbg("Missing request.result  - result no value",request);
+						}
 						totalReads++;
 						checkComplete();
 					};
 				}
 
+				log_dbg("pairs to read:",pairs.length);
+
+				if(!pairs || pairs.length < 1) {
+					resolve();
+					return;
+				}
+
 				for(var n=0;n<pairs.length;n++) {
+					log_dbg("in loop ",n);
 					getKey(pairs[n])
 				}
+
+				log_dbg("end readCB() Promise.")
 			});
 		},
 		deleteCB: function(keys){
