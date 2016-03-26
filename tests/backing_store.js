@@ -16,36 +16,44 @@ var double = function(num) {
 	return num*2;
 }
 
-var VALS = [];
+var VALS = {
+'key1' : 5,
+'key2' : 50,
+'key3' : 500,
+'key4' : 1000
+};
 
-var updaters_keys = {
-	'key1' : 5,
-	'key2' : 6,
-	'key3' : 7
+var externalSetFunc = function(key,val) {
+	console.log("externalSetFunc(",key,",",val,")");
+	VALS[key] = val;
+}
+var externalDelFunc = function(key,val) {
+	console.log("externalDelFunc(",key,")");
+	delete VALS[key];
 }
 
-var updater_set_vals_in_cache = function(cache,val) {
-	var keyz = Object.keys(updaters_keys);
-
-	for(var n=0;n<keyz.length;n++) {
-		_val = val;
-		if(val === undefined) {
-			cache.set(keyz[n],updaters_keys[keyz[n]]);
-		} else {
-			if(typeof val === 'function') {
-				_val = val(updaters_keys[keyz[n]]);
-			}
-			updaters_keys[keyz[n]] = _val;
-			cache.set(keyz[n],_val);
-		}
-	}
+var externalGetFunc = function(key) {
+	console.log("externalGetFunc(",key,")");
+	return VALS[key]; 
 }
+
+var SOMEVAL = 55;
+
+var SAY = function() {
+    var args = Array.prototype.slice.call(arguments);
+    args.unshift(">> TEST:");
+    if(typeof global == 'object' && global.log)
+        log.debug.apply(log,args);
+    else
+        console.log.apply(console,args);
+};
+
 
 this.backing_store =  {
 
 	'test1' : function(TEST) {
 
-		console.trace("HERE");
+		console.log("backing_store.test1 starting.");
 
 		TEST.ok(true,"All ok.");
 		var backing = new SmartCache.makeIndexedDBBacking(cache,"testBackingStore",{debug_mode: true});
@@ -55,36 +63,40 @@ this.backing_store =  {
 			doTest();
 		});
 
-		var testUpdater = new cache.Updater(function(val,data,key,cache){
+		var testUpdater = new cache.Updater(function(cache){
 			// this - refers to the Updater
-			var self = this;
-			return new Promise(function(resolve,reject){
-				setTimeout(function(){
-					console.log("In [testUpdater (" + self.id() + ":" + self._ref + ")].callback - key",key);
-					if(val !== undefined) {
-						console.log("got a 'set' command");
-						updater_set_vals_in_cache();
-						resolve();
-						return;
-					} else {
-						console.log("[testUpdater] was a 'selfUpdate' ")
-						if(data !== undefined) {
-							console.log("  + has data");
-							updater_set_vals_in_cache(cache,function(d){
-								return d+1;
-							})
-							resolve();
-						} else {
-							console.log("  - no data");
-							updater_set_vals_in_cache(cache,5);
-							resolve();
-						}
-					}
-				},500);
-			});
-		},function(val,key,cache){
-			console.log("Updater saw delete key:",key,"last val was:",val);
-			delete updaters_keys[key];
+			var setkeys = cache.getWriteReqs(); // The `setkeys` is an array of keys which need to be set by the Updater      
+			var getkeys = cache.getReadReqs();  // need to get read by the Updater - and then, set() in the cache
+			var delkeys = cache.getDelReqs();
+			console.log("in [testUpdater] Updater:",this.id()); // this refers to the Updater
+			for(var n=0;n<setkeys.length;n++) {
+				console.log("[testUpdater] Updating key",setkeys[n]);
+				externalSetFunc(setkeys[n],cache.get(setkeys[n])); // or any other arbritrary magic!
+				cache.setComplete(setkeys[n]);  // let the cache know this work was completed
+			}
+			for(var n=0;n<delkeys.length;n++) {
+				console.log("[testUpdater] Deleting key",delkeys[n]);
+				externalDelFunc(delkeys[n]); // or any other arbritrary magic!
+				cache.del(delkeys[n]);
+				cache.setComplete(delkeys[n]);	  
+			}
+			for(var n=0;n<getkeys.length;n++) {
+				console.log("[testUpdater] Setting key",getkeys[n]);
+				if(getkeys[n] == "something not here") {
+			    cache.setFail(getkeys[n]); // you can mark certain keys as failing. So this 'set' failed.
+			                               // this is 'fail fast' - note, any key request not marked 
+			                               // with `setComplete(key)` is automatically considered failing
+			                               // at the end of the call
+			  } else {
+			      cache.set(getkeys[n],externalGetFunc(getkeys[n])); // or any other arbritrary magic!
+			      //cache.setComplete(keys[n]); // can be done, automatically marked as complete when cache.set is called
+			  }
+			}
+
+			cache.set('newkey',SOMEVAL);  // the updater may also set new keys during the update
+			                            // (opportunistic caching)
+			return Promise.resolve(); // should always return a Promise - and should resolve() unless
+			                        // critical error happened.
 		},
 		function(){
 			console.trace("[testUpdater] OnShutdown");
@@ -96,6 +108,7 @@ this.backing_store =  {
 
 
 		var doTest = function(){
+			SAY("in doTest()");
 			
 			TEST.ok(true,"OK2");
 
@@ -103,6 +116,8 @@ this.backing_store =  {
 				updater: testUpdater
 				,ttl: 2000
 			});
+
+			SAY("@key2");
 
 			cache.setData('key2',3,{
 				updater: testUpdater
@@ -128,8 +143,9 @@ this.backing_store =  {
 			var printInterval = setInterval(function(){
 				console.log("--------------------------");
 				var d = cache.getData('key1');
-				console.log("key1:",d);
-				d.then(function(){
+				console.log(" (Promise) key1:",d);
+				d.then(function(r){
+					console.log("key1:",r);
 					T1[1]++;
 				},function(){
 					T1[1]++;
@@ -139,7 +155,8 @@ this.backing_store =  {
 				});
 				var d = cache.getData('key2');
 				console.log("key2:",d);
-				d.then(function(){
+				d.then(function(r){
+					console.log("key2:",r);
 					T1[2]++;
 				},function(){
 					T1[2]++;
@@ -149,7 +166,8 @@ this.backing_store =  {
 				});
 				var d = cache.getData('key3');
 				console.log("key3:",d);
-				d.then(function(){
+				d.then(function(r){
+					console.log("key3:",r);					
 					T1[3]++;
 				},function(){
 					T1[3]++;
@@ -163,7 +181,7 @@ this.backing_store =  {
 						for(var n=1;n<4;n++) {
 							TEST.ok(T1[0]==T1[n],"Promises completed key"+n+" for run:"+t);
 						}	
-					},1000);					
+					},500);					
 				})(RUN);
 				console.log("Stats:",cache.getStats());
 				RUN++;
