@@ -7,6 +7,8 @@
 
 var SmartCache = require('smartcache');
 var Promise = require('es6-promise').Promise;
+var base32 = require('base32');
+
 
 var cache = new SmartCache({
 	debug_mode: true
@@ -37,7 +39,8 @@ var externalGetFunc = function(key) {
 	return VALS[key]; 
 }
 
-var SOMEVAL = 55;
+var SOMEVAL = base32.randomBase32(8);
+var calledEqualityCB = 0;
 
 var SAY = function() {
     var args = Array.prototype.slice.call(arguments);
@@ -103,7 +106,16 @@ this.backing_store =  {
 		},
 		{
 			interval: 5000,
-			id: 'testUpdater'
+			id: 'testUpdater',
+			equalityCB: function(key,newval,oldval) {
+				console.log("called equalityCB!!!");
+				calledEqualityCB++;
+				if(newval == oldval) {
+					return true;
+				} else {	
+					return false;
+				}
+			}
 		});
 
 
@@ -126,6 +138,18 @@ this.backing_store =  {
 			cache.setData('key3',3,{
 				updater: testUpdater
 			});
+
+			newKeyTestEvent = null;
+			cache.events().on('change',function(key,d,source){
+				console.log("got 'change' event",arguments);
+				if(key == 'newkey') {
+					newKeyTestEvent = {key: key, val: d, source: source };					
+					// cache.getData('newkey').then(function(d){
+					// })
+
+				}
+			});
+
 
 			// setTimeout(function(){
 			// 	cache.setData('key1',6);	
@@ -187,9 +211,22 @@ this.backing_store =  {
 				RUN++;
 			},1500);
 
+
+
 			setTimeout(function(){
 				console.log("**** removed key1");
+				
+				var gotEvent = null;
+				cache.events().on('del',function(key,source,uid){
+					console.log("got 'del' event:",arguments);
+					gotEvent = key;
+				});
+
 				cache.removeData('key1');
+				setTimeout(function(){
+					TEST.equal('key1',gotEvent,"delete event");
+				},200);
+
 			},10000);
 
 
@@ -206,6 +243,14 @@ this.backing_store =  {
 					TEST.ok(false,"This should never reject");
 				});
 	     		console.log("RET=",ret);
+
+
+	     		TEST.ok(newKeyTestEvent && typeof newKeyTestEvent == 'object',"change event");
+	     		TEST.equal(newKeyTestEvent.key,'newkey','change Event data ok.');
+	     		TEST.equal(newKeyTestEvent.val,SOMEVAL,'Random data from Updater passed.');
+	     		TEST.equal(newKeyTestEvent.source,'updater','Source field from Updater passed.');
+
+	     		TEST.ok(calledEqualityCB > 1,"equalityCB is getting called.");
 
 				setTimeout(function(){
 					for(var n=1;n<4;n++) {

@@ -5,6 +5,8 @@ var Promise = require('es6-promise').Promise;
 
 var jsCache = require('js-cache');
 var base32 = require('./base32.js');
+var EventEmitter = require('events');
+var Util = require('util');
 
 var log_err = function() {
     if(global.log)
@@ -39,6 +41,14 @@ var ON_log_dbg = function() {
         console.log.apply(console,args);
 };
 
+
+var CacheEmitter = function(cache) {
+    this.cache = cache;
+    EventEmitter.call(this);
+};
+
+Util.inherits(CacheEmitter,EventEmitter);
+
 var SmartCache = function(opts) {
     var smartcache = this;
     var stats = {
@@ -47,6 +57,12 @@ var SmartCache = function(opts) {
         updateCalls: 0,
         allGets: 0
     };
+
+    var _emitter = new CacheEmitter(this);
+
+    this.events = function() {
+        return _emitter;
+    }
 
     var defaultTTL = undefined;
     var defaultThrottle = 2000;
@@ -192,10 +208,34 @@ var SmartCache = function(opts) {
         deleteQ = {};
 
         this._start = function(cachedelegate) {
+            var commit = function(cache_interface) {
+                if(!(cache_interface instanceof cacheBackingInterface)) {
+                    log_err("Invalid resolve() from Backing onConnectCB() callback. Trouble will insue.");
+                    return;
+                }
+                var pairs = cache_interface._pairs();
+                var keyz = Object.keys(pairs);
+                for(var n=0;n<keyz.length;n++) {
+                    cache.set(keyz[n],pairs[keyz[n]],backingTTL);
+                }
+                log_dbg("_start(): Backing",_selfBacking.id(),"set",keyz.length,"values");
+            }
+
             if(onConnectCB && typeof onConnectCB === 'function') {
                 var ret = onConnectCB(cachedelegate);
                 if(ret && typeof ret === 'object' && typeof ret.then === 'function') {
-                    return ret;
+                    return new Promise(function(resolve,reject){
+                        ret.then(function(cache_interface){
+                            commit(cache_interface);
+                            resolve();
+                        },function(){
+                            log_err("error in Backing:",e);
+                            resolve();
+                        }).catch(function(e){
+                            log_err("exception in Backing:",e);
+                            resolve();
+                        })
+                    });
                 } else {
                     return Promise.resolve();
                 }
@@ -588,6 +628,10 @@ var SmartCache = function(opts) {
      *         throttle: 5000,    // only call the updater every 5 seconds, no quicker
      *         id: "someName"     // a specified ID name, otherwise a random new name will be generated
      *                            // useful if replacing an Updater
+     *         equalityCB: function(key,newval,oldval) { // a compartor function
+     *              return (newval==oldval);         // the default is `==` - but this 
+     *                                               // allows implementer to do object comparison
+     *         }
      *      } The interval the updater should self update if desired.
      * @return {any} Any value, but always return the updated data - even if no change. A return
      * of `undefined` will effectively remove the data from the cache.
@@ -644,6 +688,9 @@ var SmartCache = function(opts) {
             }
             if(options.interval && options.throttle && options.interval < options.throttle) {
                 throw new RangeError("options.interval must be > options.throttle");
+            }
+            if(options.equalityCB && typeof options.equalityCB != 'function') {
+                throw new TypeError("options.equalityCB must be a [function]");
             }
         } else {
             options = {};
@@ -911,10 +958,32 @@ var SmartCache = function(opts) {
      * @param {[type]} updater [description]
      */
     var _setData = function(key,val,ttl,updater) {
+        
+        var sendEvent = function(existing,source,id) {
+            var change = false;
+            log_dbg("sendEvent",arguments);
+            if(existing) {
+                if(updater && updater.getOpts().equalityCB) {
+                    change = updater.getOpts().equalityCB(key,val,existing);
+                } else {
+                    if(typeof existing !== 'object')
+                        change = !(existing == val);
+                    else
+                        change = true;
+                }
+                if(change) { _emitter.emit('change',key,val,source,id); }
+            } else {
+                _emitter.emit('new',key,val,source,id)
+            }
+        }
+
         if(ttl == undefined && defaultTTL) {
             ttl = defaultTTL;
         }
+        var existing = cache.get(key);
+        log_dbg("existing:",existing);
         cache.set(key,val,ttl);
+        sendEvent(existing,'updater',updater.id());
         updaterTableByKey[key] = updater.id();
         if(backing) {
             backing._write(key,val);
@@ -925,6 +994,7 @@ var SmartCache = function(opts) {
     // on any delete key
     // @param {String} source who asked for delete: 'updater' or 'user'
     var _deleteKey = function(key,source,updaterid) {
+        
         var u_id = updaterTableByKey[key];
         var u = getUpdaterByKey(key);
         if(u && ((source != 'updater') || 
@@ -942,8 +1012,8 @@ var SmartCache = function(opts) {
                 delete updaterTableByKey[key];
                 removeUpdater(u_id);             
             }
-    //        var waits = pendingByKey[key];
             cache.del(key);
+            _emitter.emit('del',key,source,u_id);
             if(backing) {
                 return backing._delete(key);
             } else {
@@ -975,6 +1045,25 @@ var SmartCache = function(opts) {
      * immediately.
      */
     this.setData = function(key,val,opts) {
+
+         var sendEvent = function(existing,source,updater) {
+            var change = false;
+            log_dbg("sendEvent",arguments);
+            if(existing) {
+                if(updater && updater.getOpts().equalityCB) {
+                    change = updater.getOpts().equalityCB(key,val,existing);
+                } else {
+                    if(typeof existing !== 'object')
+                        change = !(existing == val);
+                    else
+                        change = true;
+                }
+                if(change) { _emitter.emit('change',key,val,source); }
+            } else {
+                _emitter.emit('new',key,val,source)
+            }
+        }
+
         var updater = undefined;
         var ttl = undefined;
         if(typeof opts === 'object') {
@@ -998,6 +1087,7 @@ var SmartCache = function(opts) {
         }
         // update value in cache
         cache.set(key,val,ttl);
+        sendEvent(existing,'caller',updater);
         if(updater) {
             return updater.setData(key).then(function(){
                 if(backing) {
@@ -1179,12 +1269,13 @@ var SmartCache = function(opts) {
     cache.on('del',function(key){
         if(!deleteTableByKey[key]) {
             log_dbg("Key falling out of cache:",key);
+            //if(autorefresh) {}
             return;
         }
-        var ttl = undefined;
-        if(defaultTTL) {
-            ttl = defaultTTL;
-        }
+        // var ttl = undefined;
+        // if(defaultTTL) {
+        //     ttl = defaultTTL;
+        // }
         log_dbg("Saw cache (real)delete of key:",key);
         if(deleteTableByKey[key]) {
             var u_id = updaterTableByKey[key];

@@ -16,7 +16,7 @@
 
 	<script type="text/javascript">
 	    window.onerror = function(message, url, lineNumber) {
-	        console.log("WINDOW Error: "+message+" in "+url+" at line "+lineNumber);
+	        console.error("WINDOW Error: "+message+" in "+url+" at line "+lineNumber);
 	    }
 	</script>
 
@@ -26,7 +26,8 @@
 
 </head>
 <body>
-  Test indexdb driver. Open debugger console view.
+  Test indexdb driver. Open debugger console view.<br>
+  <b>NOTE:</b> this test if only valid after it has been run once or more. First run will fail.
   <h1 id="nodeunit-header">IndexedDBBacking Store Test</h1>
 
     <script>

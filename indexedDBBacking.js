@@ -220,12 +220,13 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     DB = event.target.result;
                     DB.onerror = genericErrorHandler;
                     loadDB(cache).then(function(){
-                    	resolve();
+                    	resolve(cache);
                     },function(e){
                     	log_err("Error during database load:",e);
-                    	resolve();
+                    	reject(e);
                     }).catch(function(e){
                     	log_err("Exception occurred while loading DB:",e);
+                    	reject(e);
                     });
 //                    resolve();
                 };
