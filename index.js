@@ -81,6 +81,9 @@ var SmartCache = function(opts) {
                 throw new TypeError("Key must be a string");
             }
         }
+        this.get = function(key) {
+            return cache.get(key);
+        }
 
         this._promises = function() {
             return promises;
@@ -188,9 +191,9 @@ var SmartCache = function(opts) {
         writerTimeout = null;
         deleteQ = {};
 
-        this._start = function() {
+        this._start = function(cachedelegate) {
             if(onConnectCB && typeof onConnectCB === 'function') {
-                var ret = onConnectCB();
+                var ret = onConnectCB(cachedelegate);
                 if(ret && typeof ret === 'object' && typeof ret.then === 'function') {
                     return ret;
                 } else {
@@ -343,7 +346,8 @@ var SmartCache = function(opts) {
     this.setBacking = function(_backing) {
         return new Promise(function(resolve,reject){
             if(_backing instanceof smartcache.Backing) {
-                _backing._start().then(function(){
+                var cache_interface = new cacheBackingInterface({});
+                _backing._start(cache_interface).then(function(){
                     backing = _backing;
                     resolve();
                 },function(e){
