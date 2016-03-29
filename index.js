@@ -518,9 +518,7 @@ var SmartCache = function(opts) {
 //            delete this._delQ[key];
         }
 
-//        if(key != this._keyForCall) {
-            // smartcache.removeData(key);
-//        }
+
     }
     //     writeQueue,  // the queue used to tell the Updater to set a value at the Updater's end
     //     readQueue,   // the queue for telling the Updater to read a value at the Updater's end
@@ -699,24 +697,6 @@ var SmartCache = function(opts) {
         this.id = function() {
             return _id;
         }
-
-
-        // var completeWaits_resolve = function(Q,ret) {
-        //     log_dbg("completeWaits_resolve");
-        //     for(var n=0;n<Q.length;n++) {
-        //         Q[n].resolve(ret);
-        //     }
-        // }
-        // var completeWaits_reject = function(Q,err) {
-        //                 log_dbg("completeWaits_reject");
-        //     for(var n=0;n<Q.length;n++) {
-        //         Q[n].reject(err);
-        //     }
-        // }
-
-        // var rdTokenQ = {};
-        // var wrTokenQ = {};
-        // var dlTokenQ = {};
 
 
 
@@ -980,11 +960,6 @@ var SmartCache = function(opts) {
                 return Promise.resolve();
             }            
         }
-        // if(waits) {
-        //     // So, if people were waiting on this to update, and 
-        //     // meanwhile you delete, just reject all the pending Promises
-        //     waits.reject(); 
-        // }
 
     }
 
@@ -1058,54 +1033,6 @@ var SmartCache = function(opts) {
             return Promise.resolve();
         }
 
-        // if(existing != undefined && !updater) {
-        //     // it's an existing entry and it does not
-        //     // have a new updater
-        //     var u = getUpdaterByKey(key);
-        //     if(u) {
-        //         // if it has an existing Updater
-        //         // use it
-        //         var retupdater = u.setData(key);
-        //         return retupdater
-        //     } 
-        // } else {
-        //     // It's a exiting entry
-        //     // with a new updater
-        //     if(existing != undefined && updater) {            
-        //         // it might have had an old updater, get rid of it
-        //         var u_id = updaterTableByKey[key];
-        //         if(u_id) removeUpdater(u_id);     
-        //         // add new updater   
-        //         addUpdater(key,updater);
-        //         // and run that new updater to add the data
-        //         return updater.then(function(){
-        //             if(backing) {
-        //                 backing._write(key,val);
-        //             }
-        //         });
-        //     } else if (updater) {
-        //         addUpdater(key,updater);
-        //         // and run that new updater to add the data
-        //     } 
-        // }
-
-        // // default case:
-        // var u = getUpdaterByKey(key);
-        // if(u) {
-        //     log_dbg("Unreachable???");
-        //     return u.setData(key).then(function(){
-        //         if(backing) {
-        //             backing._write(key,val);
-        //         }                
-        //     }) // tell Updater to update its data (will use the cached value)
-        // }
-        // log_dbg("default setData, backing:",backing);
-        // if(backing) {
-        //     backing._write(key,val);
-        // }
-        // return Promise.resolve();
-
-
     };
 
 
@@ -1167,12 +1094,6 @@ var SmartCache = function(opts) {
                     // no updater, no data, just nothing:
                     resolve();
                 }
-
-                // // if(!queueForNotifyByKey(key,resolve,reject)) {
-                //     log_dbg("no key:",key);
-                //     reject(); // no data for that key
-                //     return;
-                // }
             } else {
                 log_dbg("trying backing for:",key);
                 backing._read(key).then(function(r){
@@ -1204,10 +1125,6 @@ var SmartCache = function(opts) {
                         // resolve to undefined
                         resolve();
                     }
-                    // if(!queueForNotifyByKey(key,resolve,reject)) {
-                    //     log_dbg("no key or updater for:",key);
-                    //     reject(); // no data for that key
-                    // }
                 }).catch(function(e){
                     log_err("@catch - error",e);
                     reject();
@@ -1232,10 +1149,6 @@ var SmartCache = function(opts) {
             //if(autorefresh) {}
             return;
         }
-        // var ttl = undefined;
-        // if(defaultTTL) {
-        //     ttl = defaultTTL;
-        // }
         log_dbg("Saw cache (real)delete of key:",key);
         if(deleteTableByKey[key]) {
             var u_id = updaterTableByKey[key];
