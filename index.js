@@ -772,7 +772,17 @@ var SmartCache = function(opts) {
                 currentDelgCache = new cacheDelegate(_selfUpdater);
                 _throttleTimer = 1; // this prevents updates from getting run on top of each other
                 stats.updateCalls++;
-                var ret = _cb.call(_selfUpdater,delg);
+                var ret = null;
+                try {
+                    ret = _cb.call(_selfUpdater,delg);
+                } catch(e) {
+                    log_err("Error in updater",_selfUpdater.id(),"callback:",e);
+                    delg._complete(e);
+                    _throttleTimer = setTimeout(function(){
+                        log_dbg("THROTTLE: "+_id+" in timeout for throttle");
+                        doUpdate();
+                    },throttle);
+                }
                 if(ret && typeof ret === 'object' && typeof ret.then === 'function') {
                     ret.then(function(r){
                         delg._complete();
@@ -843,7 +853,7 @@ var SmartCache = function(opts) {
                         // _throttleTimer = null;
                     });
                 } else {
-                    log_err("Update must primary callback must return a promise.");
+                    log_err("Updater",_selfUpdater.id(),"callback must return a promise.");
                     var delg = new cacheDelegate(_selfUpdater);
                 }
             }
@@ -1076,7 +1086,9 @@ var SmartCache = function(opts) {
     this.runUpdaters = function(specified) {
         if(specified) {
             if(updatersById[specified]) {
-                return updatersById[specified].update();
+                var ret = null;
+                ret = updatersById[specified].update();
+                return ret;
             } else {
                 log_err("No updater with given ID",specified);
                 return Promise.reject("No updater with given ID");
@@ -1086,9 +1098,14 @@ var SmartCache = function(opts) {
         var proms = [];
         for(var n=0;n<ids.length;n++) {
             log_dbg("runUpdaters:",ids[n]);
-            proms.push(updatersById[ids[n]].update());
+            var ret = null;
+            ret = updatersById[ids[n]].update();
+            if(ret) proms.push(ret);
         }
-        return Promise.all(proms);
+        if(proms.length > 0)
+            return Promise.all(proms);
+        else
+            return Promise.reject("no updaters or all failed.");
     };
 
     this.addUpdater = function(updater) {

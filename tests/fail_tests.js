@@ -54,7 +54,7 @@ var SAY = function() {
 
 var UPDATER_RUNS =0;
 
-this.backing_store =  {
+this.fail_tests =  {
 
 	'test1' : function(TEST) {
 
@@ -124,29 +124,24 @@ this.backing_store =  {
 
 		var brokenUpdater = new cache.Updater(function(cache){
 			// this - refers to the Updater
-			log.debug("brokenUpdater update()");
+			SAY("brokenUpdater update()");
 			throw "crap";
 		},
 		function(){
-			console.trace("[testUpdater] OnShutdown");
+			console.trace("[brokenUpdater] OnShutdown");
 		},
 		{
 			interval: 5000,
-			id: 'brokenUpdater',
-			equalityCB: function(key,newval,oldval) {
-				console.log("called equalityCB!!!");
-				calledEqualityCB++;
-				if(newval == oldval) {
-					return true;
-				} else {	
-					return false;
-				}
-			}
+			id: 'brokenUpdater'
 		});
-
 
 		var request_update_promise_complete1 = 0;
 		var request_all_updaters_run = false;
+
+		var UNREACHABLE_ONE = false;
+		var UNREACHABLE_TWO = false;
+		var REACHABLE_THREE = false;
+		var REACHABLE_ONE = false;
 
 		var doTest = function(){
 			SAY("in doTest()");
@@ -154,12 +149,32 @@ this.backing_store =  {
 			TEST.ok(true,"OK2");
 
 			cache.addUpdater(testUpdater);
+			cache.addUpdater(brokenUpdater);
+			cache.runUpdaters('brokenUpdater').then(function(){
+				SAY("Nope. Should not be here");
+				UNREACHABLE_ONE = true;
+			},function(e){
+				SAY("SUCCESS. Got error",e);
+				REACHABLE_ONE = true;
+			}).catch(function(e){
+				SAY("@catch",e);
+			});
 			cache.runUpdaters('testUpdater2').then(function(){
 				request_update_promise_complete1 = UPDATER_RUNS;
 			});
+			// run Updaters always fulfills unless 
+			// there are no Updaters.
 			cache.runUpdaters().then(function(){
+				SAY("GOT HERE GOT HERE");
+				// should still fulfill, since 'testUpdater' runs
 				request_all_updaters_run = true;
-			});
+			},function(e){
+				SAY("ERROR: should be at reject",e);
+				REACHABLE_THREE = true;
+			}).catch(function(e){
+				SAY("ERROR: should not happen",e);
+				UNREACHABLE_TWO = true;
+			})
 
 			SAY("OK3");
 
@@ -291,8 +306,14 @@ this.backing_store =  {
 
 	     		TEST.ok(calledEqualityCB > 1,"equalityCB is getting called.");
 
+	     		TEST.equal(UNREACHABLE_ONE,false,"Should not have reached resolve()");
+	     		TEST.equal(UNREACHABLE_TWO,false,"Should not have reached UNREACHABLE_TWO");
+	     		TEST.equal(REACHABLE_THREE,true,"Should have reached UNREACHABLE_THREE");
+	     		TEST.equal(REACHABLE_ONE,true,"Should not have reached reject()");
+
+
 	     		TEST.equal(request_update_promise_complete1,1,"ask for specified Updater ran.");
-	     		TEST.ok(request_all_updaters_run,"ask for all updaters to run - Promise complete.");
+	     		TEST.ok(!request_all_updaters_run,"ask for all updaters to run - Promise complete.");
 
 				setTimeout(function(){
 					for(var n=1;n<4;n++) {
