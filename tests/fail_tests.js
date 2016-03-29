@@ -124,6 +124,7 @@ this.fail_tests =  {
 
 		var brokenUpdater = new cache.Updater(function(cache){
 			// this - refers to the Updater
+			cache.set("fromBrokenUpdater",33);
 			SAY("brokenUpdater update()");
 			throw "crap";
 		},
@@ -135,6 +136,25 @@ this.fail_tests =  {
 			id: 'brokenUpdater'
 		});
 
+		var brokenUpdater2 = new cache.Updater(function(cache){
+			// this - refers to the Updater
+			SAY("brokenUpdater2 update()");
+			return new Promise(function(){
+				setTimeout(function(){
+					throw "crap";
+
+				},1000);
+			});
+		},
+		function(){
+			console.trace("[brokenUpdater2] OnShutdown");
+		},
+		{
+			interval: 5000,
+			id: 'brokenUpdater2'
+		});
+
+
 		var request_update_promise_complete1 = 0;
 		var request_all_updaters_run = false;
 
@@ -142,6 +162,7 @@ this.fail_tests =  {
 		var UNREACHABLE_TWO = false;
 		var REACHABLE_THREE = false;
 		var REACHABLE_ONE = false;
+		var FROM_BROKENUPDATER = null;
 
 		var doTest = function(){
 			SAY("in doTest()");
@@ -156,6 +177,9 @@ this.fail_tests =  {
 			},function(e){
 				SAY("SUCCESS. Got error",e);
 				REACHABLE_ONE = true;
+				cache.getData('fromBrokenUpdater').then(function(d){
+					FROM_BROKENUPDATER = d;
+				});
 			}).catch(function(e){
 				SAY("@catch",e);
 			});
@@ -175,6 +199,26 @@ this.fail_tests =  {
 				SAY("ERROR: should not happen",e);
 				UNREACHABLE_TWO = true;
 			})
+
+			cache.addUpdater(brokenUpdater2);
+			cache.runUpdaters().then(function(){
+				SAY("(2) GOT HERE GOT HERE");
+				// should still fulfill, since 'testUpdater' runs
+			},function(e){
+				SAY("(2) ERROR: should be at reject",e);
+			}).catch(function(e){
+				SAY("(2) ERROR: should not happen",e);
+			})
+
+			cache.runUpdaters('brokenUpdater2').then(function(){
+				SAY("(3) brokenUpdater2 GOT HERE GOT HERE");
+				// should still fulfill, since 'testUpdater' runs
+			},function(e){
+				SAY("(3) brokenUpdater2  ERROR: should be at reject",e);
+			}).catch(function(e){
+				SAY("(3) brokenUpdater2  ERROR: should not happen",e);
+			})
+
 
 			SAY("OK3");
 
@@ -200,7 +244,6 @@ this.fail_tests =  {
 					newKeyTestEvent = {key: key, val: d, source: source };					
 					// cache.getData('newkey').then(function(d){
 					// })
-
 				}
 			});
 
@@ -310,7 +353,7 @@ this.fail_tests =  {
 	     		TEST.equal(UNREACHABLE_TWO,false,"Should not have reached UNREACHABLE_TWO");
 	     		TEST.equal(REACHABLE_THREE,true,"Should have reached UNREACHABLE_THREE");
 	     		TEST.equal(REACHABLE_ONE,true,"Should not have reached reject()");
-
+	     		TEST.equal(FROM_BROKENUPDATER,33,"Got value before Updater had exception.");
 
 	     		TEST.equal(request_update_promise_complete1,1,"ask for specified Updater ran.");
 	     		TEST.ok(!request_all_updaters_run,"ask for all updaters to run - Promise complete.");

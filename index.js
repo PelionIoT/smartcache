@@ -512,7 +512,7 @@ var SmartCache = function(opts) {
         log_dbg("cacheDelegate:",key,val,ttl);
         log_dbg("updater:",this._updater)
         _setData(key,val,ttl,this._updater);
-        log_dbg('past set')
+        log_dbg('past set');
         if(this._readQ[key]) { // readQ - if the data is 'set' by the Updater
                                // then it has accomplished the 'read'
             this._readQ[key].resolve();
