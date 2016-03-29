@@ -18,6 +18,10 @@ var double = function(num) {
 	return num*2;
 }
 
+var SOME_NEW_KEY = null;
+var SOME_NEW_KEY_VAL = null;
+var SOMEVAL = "";
+
 var VALS = {
 'key1' : 5,
 'key2' : 50,
@@ -39,7 +43,6 @@ var externalGetFunc = function(key) {
 	return VALS[key]; 
 }
 
-var SOMEVAL = base32.randomBase32(8);
 var calledEqualityCB = 0;
 
 var SAY = function() {
@@ -99,6 +102,11 @@ this.backing_store =  {
 			  }
 			}
 
+			SOME_NEW_KEY = base32.randomBase32(8);
+			SOME_NEW_KEY_VAL = base32.randomBase32(8);
+			cache.set('random'+SOME_NEW_KEY,SOME_NEW_KEY_VAL);
+
+			SOMEVAL = base32.randomBase32(8);
 			cache.set('newkey',SOMEVAL);  // the updater may also set new keys during the update
 			                            // (opportunistic caching)
 			return Promise.resolve(); // should always return a Promise - and should resolve() unless
@@ -136,6 +144,13 @@ this.backing_store =  {
 			equalityCB: function(key,newval,oldval) {
 				console.log("called equalityCB!!!");
 				calledEqualityCB++;
+				if(typeof newval == 'object' && typeof oldval == 'object'
+					&& newval.special && oldval.special) {
+					if(newval.special == oldval.special) 
+						return true;
+					else
+						return false;
+				}
 				if(newval == oldval) {
 					return true;
 				} else {	
@@ -147,6 +162,10 @@ this.backing_store =  {
 
 		var request_update_promise_complete1 = 0;
 		var request_all_updaters_run = false;
+		var COMPARISON_OBJECT_TEST_SPECIAL= null;
+
+		var COMPARE_NEW_KEY = null;
+		var COMPARE_NEW_VAL = null;
 
 		var doTest = function(){
 			SAY("in doTest()");
@@ -185,9 +204,38 @@ this.backing_store =  {
 					newKeyTestEvent = {key: key, val: d, source: source };					
 					// cache.getData('newkey').then(function(d){
 					// })
-
 				}
 			});
+
+			cache.events().on('new',function(key,d,source){
+				SAY("got new key:",key,"=",d);
+				COMPARE_NEW_KEY = key;
+				COMPARE_NEW_VAL = d;
+			});
+
+
+			cache.setData('specialTest',{ special: 101 },{
+				updater: testUpdater
+			});
+
+			cache.events().on('change',function(key,d,source){
+				console.log("got 'change' event (#2)",arguments);
+				if(key == 'specialTest') {
+					if(typeof d == 'object')
+						COMPARISON_OBJECT_TEST_SPECIAL = d.special;
+					else
+						TEST.ok(false,"Bad value in event for comparison test.");
+				}
+			});
+
+
+			setTimeout(function(){
+				cache.setData('specialTest',{ special: 102 })
+			},500)
+
+			setTimeout(function(){
+				
+			},1000)
 
 
 			// setTimeout(function(){
@@ -290,9 +338,12 @@ this.backing_store =  {
 	     		TEST.equal(newKeyTestEvent.source,'updater','Source field from Updater passed.');
 
 	     		TEST.ok(calledEqualityCB > 1,"equalityCB is getting called.");
-
+	     		TEST.equal(COMPARISON_OBJECT_TEST_SPECIAL,102,"Comparison of objects in compare callback.");
 	     		TEST.equal(request_update_promise_complete1,1,"ask for specified Updater ran.");
 	     		TEST.ok(request_all_updaters_run,"ask for all updaters to run - Promise complete.");
+
+	     		TEST.equal('random'+SOME_NEW_KEY,COMPARE_NEW_KEY,"Saw 'new' events.");
+	     		TEST.equal(SOME_NEW_KEY_VAL,COMPARE_NEW_VAL,"Saw 'new' events value.");
 
 				setTimeout(function(){
 					for(var n=1;n<4;n++) {

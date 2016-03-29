@@ -952,7 +952,7 @@ var SmartCache = function(opts) {
             log_dbg("sendEvent",arguments);
             if(existing) {
                 if(updater && updater.getOpts().equalityCB) {
-                    change = updater.getOpts().equalityCB(key,val,existing);
+                    change = !updater.getOpts().equalityCB(key,val,existing);
                 } else {
                     if(typeof existing !== 'object')
                         change = !(existing == val);
