@@ -416,13 +416,29 @@ var SmartCache = function(opts) {
     var cacheDelegate = function(updater){
         this._dirty = false;
         this._updater = updater;
-        this._writeQ = {}; this._readQ = {}; this._delQ = {};
+        this._writeQ = {}; this._readQ = {}; this._delQ = {}; this._runToken = null;
     }
 
 
     cacheDelegate.prototype.isDirty = function() {
         return this._dirty;
     }
+
+    cacheDelegate.prototype.getUpdateToken = function() {
+        // if dlTokenQ[key] ?? 
+        // if wrTokenQ[key] ??
+        this._dirty = true;
+        if(this._runToken) {
+            return this._runToken;
+        }
+        this._runToken = {}
+        var self = this;
+        this._runToken.promise = new Promise(function(resolve,reject){
+            self._runToken.resolve = resolve;
+            self._runToken.reject = reject;
+        });
+        return this._runToken;
+    }    
     cacheDelegate.prototype.addWriteToken = function(key) {
         // if dlTokenQ[key] ?? 
         // if wrTokenQ[key] ??
@@ -563,14 +579,23 @@ var SmartCache = function(opts) {
     }
     // should be called after updater completes
     // this looks for non-complete requests & fails them
-    cacheDelegate.prototype._rejectUnhandled = function() {
-        var Qs = {w:this._writeQ,r:this._readQ,d:_this.delQ};
+    cacheDelegate.prototype._complete = function(err) {
+        var Qs = {w:this._writeQ,r:this._readQ,d:this._delQ};
         for(var Q in Qs) {
             var keyz = Object.keys(Qs[Q]);
             for(var n=0;n<keyz.length;n++) {
                 Qs[Q][keyz[n]].reject();
                 delete Qs[Q][keyz[n]];
             }            
+        }
+        if(this._runToken) {
+            log_dbg("runToken",this._runToken);
+            if(err) {
+                this._runToken.reject(err);                
+            } else {
+                this._runToken.resolve();                
+            }
+
         }        
     }
 
@@ -719,6 +744,12 @@ var SmartCache = function(opts) {
             return ret.promise;
         }
 
+        // just ask for an update
+        this.update = function(){
+            var ret = currentDelgCache.getUpdateToken();
+            selfUpdate();
+            return ret.promise;
+        }
 
         /** called when an interval expires, or when a value
          * falls out of the cache
@@ -726,7 +757,6 @@ var SmartCache = function(opts) {
          * @returns {*}
          */
         var selfUpdate = function() {
-
 
             var doUpdate = function(){
                 if(shutdown) {
@@ -745,6 +775,7 @@ var SmartCache = function(opts) {
                 var ret = _cb.call(_selfUpdater,delg);
                 if(ret && typeof ret === 'object' && typeof ret.then === 'function') {
                     ret.then(function(r){
+                        delg._complete();
                         if(shutdown) {
                             return;
                         }
@@ -844,11 +875,11 @@ var SmartCache = function(opts) {
                                // we use this track to if a key is deleted vs. just 
                                // falling out of the cache
 
-    var removeUpdater = function(u_id) {
+    var _removeUpdater = function(u_id) {
         if(u_id) {
             var u = updatersById[u_id];
             if(u) {
-                u._ref--;
+                u._ref--; if(u._ref < 0) u._ref = 0;
                 log_dbg("Decreasing Updater:",u_id,"ref count to",u._ref);
                 if(u._ref < 1) {
                     log_dbg("Removing Updater:",u_id);
@@ -873,16 +904,23 @@ var SmartCache = function(opts) {
         return null;
     }
 
-    var addUpdater = function(key,updater) {
-        if(key && updater && updater instanceof smartcache.Updater) {
-//            removeUpdater(updater.id()); // remove an old updater with same ID if it exists
+    var _addUpdater = function(key,updater) {
+        if(updater && updater instanceof smartcache.Updater) {
             var uid = updater.id();
-            updaterTableByKey[key] = uid;
-            updater._ref++;
-            log_dbg("Adding updater:",uid,"(ref =",updater._ref+")");
-            updatersById[uid] = updater;
-
-            // makeTimeoutForKey(key,updater);
+            if(key) {
+                var old_updater_uid = updaterTableByKey[key];
+                if(old_updater_uid) {
+                    _removeUpdater(old_updater_uid);
+                }
+                updaterTableByKey[key] = uid;
+                updater._ref++;
+                log_dbg("Adding updater:",uid,"(ref =",updater._ref+")");
+                updatersById[uid] = updater;                
+            } else {
+                if(!updatersById[uid]) {
+                    updatersById[uid] = updater;
+                }
+            }
         } else {
             throw new TypeError("Bad parameter - needs [string],[Updater:Object]");
         }
@@ -950,7 +988,7 @@ var SmartCache = function(opts) {
         } else {
             if(u_id) {
                 delete updaterTableByKey[key];
-                removeUpdater(u_id);             
+                _removeUpdater(u_id);             
             }
             cache.del(key);
             _emitter.emit('del',key,source,u_id);
@@ -1015,7 +1053,7 @@ var SmartCache = function(opts) {
         var u_id = null;
         var existing = cache.get(key);
         if(!existing && updater) {
-            addUpdater(key,updater);
+            _addUpdater(key,updater);
         }
         if(!updater) {
             updater = getUpdaterByKey(key);
@@ -1035,6 +1073,27 @@ var SmartCache = function(opts) {
 
     };
 
+    this.runUpdaters = function(specified) {
+        if(specified) {
+            if(updatersById[specified]) {
+                return updatersById[specified].update();
+            } else {
+                log_err("No updater with given ID",specified);
+                return Promise.reject("No updater with given ID");
+            }
+        }
+        var ids = Object.keys(updatersById);
+        var proms = [];
+        for(var n=0;n<ids.length;n++) {
+            log_dbg("runUpdaters:",ids[n]);
+            proms.push(updatersById[ids[n]].update());
+        }
+        return Promise.all(proms);
+    };
+
+    this.addUpdater = function(updater) {
+        _addUpdater(null,updater);
+    };
 
     /**
      * Gets data from the cache.
