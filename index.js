@@ -860,49 +860,9 @@ var SmartCache = function(opts) {
 
     var updatersById = {}; // all updaters, by ID
 
-
-    var WaitQueue = function() {
-        this._queue = [];
-    }
-    WaitQueue.prototype.resolve = function(D) {
-        for(var n=0;n<this._queue.length;n++) {
-            this._queue[n].resolve(D);
-        }
-    }
-    WaitQueue.prototype.reject = function(D) {
-        for(var n=0;n<this._queue.length;n++) {
-            this._queue[n].reject(D);
-        }
-    }
-    WaitQueue.prototype.add = function(delegate) {
-        if(typeof delegate === 'object' &&
-            typeof delegate.resolve === 'function' &&
-            typeof delegate.reject === 'function')
-            this._queue.push(delegate);
-        else 
-            log_err("MALFORMED data in WaitQueue.");
-    }
-
     var deleteTableByKey = {}; // this table marks a key, if it's explicity deleted.
                                // we use this track to if a key is deleted vs. just 
                                // falling out of the cache
-    var pendingByKey = {};  // a map by Key, of WaitQueue objects. each entry is an object of
-
-
-    var queueForNotifyByKey = function(key,resolve,reject) {
-        if(!pendingByKey[key]) {
-//            pendingByKey[key] = new WaitQueue();
-//  Note: at this point, a WaitQueue should be created - as soon as 
-//  the key falls out of cache. If not - then it never existed
-            return false;
-        }
-        pendingByKey[key].add({
-            resolve: resolve,
-            reject: reject
-        });
-        return true;
-    }
-
 
     var removeUpdater = function(u_id) {
         if(u_id) {
@@ -1307,7 +1267,6 @@ var SmartCache = function(opts) {
         }
 
         deleteTableByKey = {}; 
-        pendingByKey = {};  
         updaterTableByKey = {};
         timerTable = {};
         updatersById = {};
