@@ -99,6 +99,7 @@ this.fail_tests =  {
 			  }
 			}
 
+			SOMEVAL = base32.randomBase32(8);
 			cache.set('newkey',SOMEVAL);  // the updater may also set new keys during the update
 			                            // (opportunistic caching)
 			return Promise.resolve(); // should always return a Promise - and should resolve() unless
@@ -233,9 +234,6 @@ this.fail_tests =  {
 				updater: testUpdater
 			});
 
-			cache.setData('key3',3,{
-				updater: testUpdater
-			});
 
 			newKeyTestEvent = null;
 			cache.events().on('change',function(key,d,source){
@@ -246,6 +244,11 @@ this.fail_tests =  {
 					// })
 				}
 			});
+
+			cache.setData('key3',3,{
+				updater: testUpdater
+			});
+
 
 
 			// setTimeout(function(){
@@ -343,10 +346,13 @@ this.fail_tests =  {
 
 
 	     		TEST.ok(newKeyTestEvent && typeof newKeyTestEvent == 'object',"change event");
-	     		TEST.equal(newKeyTestEvent.key,'newkey','change Event data ok.');
-	     		TEST.equal(newKeyTestEvent.val,SOMEVAL,'Random data from Updater passed.');
-	     		TEST.equal(newKeyTestEvent.source,'updater','Source field from Updater passed.');
-
+	     		if(newKeyTestEvent) {
+		     		TEST.equal(newKeyTestEvent.key,'newkey','change Event data ok.');
+		     		TEST.equal(newKeyTestEvent.val,SOMEVAL,'Random data from Updater passed.');
+		     		TEST.equal(newKeyTestEvent.source,'updater','Source field from Updater passed.');
+	     		} else {
+	     			TEST.ok(false,"Skipped 'newKeyTestEvent' tests");
+	     		}
 	     		TEST.ok(calledEqualityCB > 1,"equalityCB is getting called.");
 
 	     		TEST.equal(UNREACHABLE_ONE,false,"Should not have reached resolve()");
