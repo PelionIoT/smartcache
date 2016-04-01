@@ -219,8 +219,9 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     log_err("Can't get indexedDB db why??:", event);
                 };
 
-                var createStore = function(db) {
-                    var store = db.createObjectStore(KEYSTORE, {
+                var createStore = function(_db) {
+                    log_dbg('keystore: ',KEYSTORE);
+                    var store = _db.createObjectStore(KEYSTORE, {
                         keyPath: 'key'
                     });
                     store.createIndex('key', 'key', {
