@@ -251,7 +251,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     DB.onerror = on_connect_error;
 
                     if(!DB.objectStoreNames.contains(KEYSTORE)) {
-                        createStore();
+                        createStore(DB);
                         resolve();
 //                        doLoad(); // no need for this, its obviously empty
                     } else {
