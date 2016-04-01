@@ -273,7 +273,8 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
 
                     if(!DB.objectStoreNames.contains(KEYSTORE)) {
                         // HACK this should never happen!
-                        if(!shimFix) createStore(DB);
+                        log_err("Warning - missing store in database - looks messed up");
+//                        if(!shimFix) createStore(DB);
                         resolve();
 //                        doLoad(); // no need for this, its obviously empty
                     } else {
@@ -289,6 +290,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     log_dbg("makeIndexDBBacking..onupgradeneeded", evt);
                     var db = evt.currentTarget.result;
                     if(!db.objectStoreNames.contains(KEYSTORE)) {
+                        log_dbg("object store created.");
                         createStore(db);
                         resolve();
                     } else {
