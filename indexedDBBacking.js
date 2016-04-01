@@ -127,7 +127,6 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                         log_err("Error in writeCB:", evt);
                         reject(evt);
                     }
-                    //			var trans = DB.transaction([KEYSTORE],"readwrite");  // new way  - make transaction
                 var keyz = Object.keys(pairs);
                 var store = trans.objectStore(KEYSTORE);
                 for (var n = 0; n < keyz.length; n++) {
@@ -222,6 +221,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                 var request = indexedDB.open(dbname, BACKING_VERSION);
 
                 if(!request) {
+                    // did you test with Safari in 'private window' - yeah, won't work
                     log_err("Could not get a indexedDB databased request. Failing",request);
                     reject();
                     return;
@@ -234,10 +234,6 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
 
                 var createStore = function(_db) {
                     log_dbg('keystore: ',KEYSTORE);
-
-                    // _db.transaction.oncomplete = function(){
-                    //     log_dbg("************* GOT oncomplete");
-                    // };
 
                     var store = _db.createObjectStore(KEYSTORE, {
                         keyPath: '_key'
@@ -275,11 +271,13 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
 
                 var waitABitForShim = function() {
                     _fix_wait_timer = setTimeout(function(){
-                        log_dbg("Waiting a bit for indexedDBshim");
+                        // wait for the onupgradeneeded to be fired
+                        log_dbg("Waiting a bit for indexedDBshim...");
                     },1000);
                 }
 
                 request.oncomplete = function(){
+                    // not being reached
                     log_dbg("************* GOT oncomplete (2)");
                 }
 
@@ -291,14 +289,11 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     if(!DB.objectStoreNames.contains(KEYSTORE)) {
                         log_err("Warning - missing store in database - looks messed up.");
                         // HACK this should never happen!
-                        // oh, but it does. with indexeddbshim om iOS
+                        // oh, but it does - sometimes. with indexeddbshim om iOS
                         if(shimFix && !_on_upgrade_fired) {
                             log_err("Going to wait...");
                             waitABitForShim();
                         }
-//                        if(!shimFix) createStore(DB);
-//                        resolve();
-//                        doLoad(); // no need for this, its obviously empty
                     } else {
                         doLoad();
                     }
@@ -314,30 +309,6 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     // if(!DB.objectStoreNames.contains(KEYSTORE)) {
                     log_dbg("object store not created. creating...");
                     createStore(DB);
-                    //     resolve();
-                    // } else {
-                    //     resolve();
-                    // }    
-
-                    // var store = db.createObjectStore(KEYSTORE, {
-                    //     keyPath: 'key'
-                    // });
-                    // store.createIndex('key', 'key', {
-                    //     unique: "true"
-                    // });
-
-                    // Use transaction oncomplete to make sure the objectStore creation is 
-                    // finished before adding data into it.
-                    // NOTE - the onsuccess handler is triggered after the onupgradeneeded handler runs 
-                    // succesfully. See: https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB#Creating_or_updating_the_version_of_the_database
-                    // store.transaction.oncomplete = function(event) {
-                    // 	resolve();
-                    // };
-                    // 	var store = evt.currentTarget.result.createObjectStore(
-                    //    DB_STORE_NAME, { keyPath: 'id', autoIncrement: true });
-                    // store.createIndex('biblioid', 'biblioid', { unique: true });
-                    // store.createIndex('title', 'title', { unique: false });
-                    // store.createIndex('year', 'year', { unique: false });
                 };
             });
         }
