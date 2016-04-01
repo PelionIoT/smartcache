@@ -289,10 +289,15 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     DB.onerror = on_connect_error;
 
                     if(!DB.objectStoreNames.contains(KEYSTORE)) {
+                        log_err("Warning - missing store in database - looks messed up.");
                         // HACK this should never happen!
-                        log_err("Warning - missing store in database - looks messed up");
+                        // oh, but it does. with indexeddbshim om iOS
+                        if(shimFix && !_on_upgrade_fired) {
+                            log_err("Going to wait...");
+                            waitABitForShim();
+                        }
 //                        if(!shimFix) createStore(DB);
-                        resolve();
+//                        resolve();
 //                        doLoad(); // no need for this, its obviously empty
                     } else {
                         doLoad();
