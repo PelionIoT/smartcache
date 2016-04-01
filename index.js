@@ -209,6 +209,10 @@ var SmartCache = function(opts) {
 
         this._start = function(cachedelegate) {
             var commit = function(cache_interface) {
+                if(cache_interface === null || cache_interface === undefined) {
+                    log_dbg("looks like a new backing storage. empty.");
+                    return;
+                }
                 if(!(cache_interface instanceof cacheBackingInterface)) {
                     log_err("Invalid resolve() from Backing onConnectCB() callback. Trouble will insue.");
                     return;
@@ -228,7 +232,7 @@ var SmartCache = function(opts) {
                         ret.then(function(cache_interface){
                             commit(cache_interface);
                             resolve();
-                        },function(){
+                        },function(e){
                             log_err("error in Backing:",e);
                             resolve();
                         }).catch(function(e){

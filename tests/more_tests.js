@@ -71,94 +71,6 @@ this.backing_store =  {
 			doTest();
 		});
 
-		var testUpdater = new cache.Updater(function(cache){
-			// this - refers to the Updater
-			UPDATER_RUNS++;
-			var setkeys = cache.getWriteReqs(); // The `setkeys` is an array of keys which need to be set by the Updater      
-			var getkeys = cache.getReadReqs();  // need to get read by the Updater - and then, set() in the cache
-			var delkeys = cache.getDelReqs();
-			console.log("in [testUpdater] Updater:",this.id()); // this refers to the Updater
-			for(var n=0;n<setkeys.length;n++) {
-				console.log("[testUpdater] Updating key",setkeys[n]);
-				externalSetFunc(setkeys[n],cache.get(setkeys[n])); // or any other arbritrary magic!
-				cache.setComplete(setkeys[n]);  // let the cache know this work was completed
-			}
-			for(var n=0;n<delkeys.length;n++) {
-				console.log("[testUpdater] Deleting key",delkeys[n]);
-				externalDelFunc(delkeys[n]); // or any other arbritrary magic!
-				cache.del(delkeys[n]);
-				cache.setComplete(delkeys[n]);	  
-			}
-			for(var n=0;n<getkeys.length;n++) {
-				console.log("[testUpdater] Setting key",getkeys[n]);
-				if(getkeys[n] == "something not here") {
-			    cache.setFail(getkeys[n]); // you can mark certain keys as failing. So this 'set' failed.
-			                               // this is 'fail fast' - note, any key request not marked 
-			                               // with `setComplete(key)` is automatically considered failing
-			                               // at the end of the call
-			  } else {
-			      cache.set(getkeys[n],externalGetFunc(getkeys[n])); // or any other arbritrary magic!
-			      //cache.setComplete(keys[n]); // can be done, automatically marked as complete when cache.set is called
-			  }
-			}
-
-			SOME_NEW_KEY = base32.randomBase32(8);
-			SOME_NEW_KEY_VAL = base32.randomBase32(8);
-			cache.set('random'+SOME_NEW_KEY,SOME_NEW_KEY_VAL);
-
-			SOMEVAL = base32.randomBase32(8);
-			cache.set('newkey',SOMEVAL);  // the updater may also set new keys during the update
-			                            // (opportunistic caching)
-			return Promise.resolve(); // should always return a Promise - and should resolve() unless
-			                        // critical error happened.
-		},
-		function(){
-			console.trace("[testUpdater] OnShutdown");
-		},
-		{
-			interval: 5000,
-			id: 'testUpdater2',
-			equalityCB: function(key,newval,oldval) {
-				console.log("called equalityCB!!!");
-				calledEqualityCB++;
-				if(newval == oldval) {
-					return true;
-				} else {	
-					return false;
-				}
-			}
-		});
-
-
-		var brokenUpdater = new cache.Updater(function(cache){
-			// this - refers to the Updater
-			log.debug("brokenUpdater update()");
-			throw "crap";
-		},
-		function(){
-			console.trace("[testUpdater] OnShutdown");
-		},
-		{
-			interval: 5000,
-			id: 'brokenUpdater',
-			equalityCB: function(key,newval,oldval) {
-				console.log("called equalityCB!!!");
-				calledEqualityCB++;
-				if(typeof newval == 'object' && typeof oldval == 'object'
-					&& newval.special && oldval.special) {
-					if(newval.special == oldval.special) 
-						return true;
-					else
-						return false;
-				}
-				if(newval == oldval) {
-					return true;
-				} else {	
-					return false;
-				}
-			}
-		});
-
 
 		var request_update_promise_complete1 = 0;
 		var request_all_updaters_run = false;
@@ -168,6 +80,101 @@ this.backing_store =  {
 		var COMPARE_NEW_VAL = null;
 
 		var doTest = function(){
+			///////////////////////////////////////////////////////////////////
+			/// START OF SETUP ////////////////////////////////////////////////
+			///////////////////////////////////////////////////////////////////
+
+			var testUpdater = new cache.Updater(function(cache){
+				// this - refers to the Updater
+				UPDATER_RUNS++;
+				var setkeys = cache.getWriteReqs(); // The `setkeys` is an array of keys which need to be set by the Updater      
+				var getkeys = cache.getReadReqs();  // need to get read by the Updater - and then, set() in the cache
+				var delkeys = cache.getDelReqs();
+				console.log("in [testUpdater] Updater:",this.id()); // this refers to the Updater
+				for(var n=0;n<setkeys.length;n++) {
+					console.log("[testUpdater] Updating key",setkeys[n]);
+					externalSetFunc(setkeys[n],cache.get(setkeys[n])); // or any other arbritrary magic!
+					cache.setComplete(setkeys[n]);  // let the cache know this work was completed
+				}
+				for(var n=0;n<delkeys.length;n++) {
+					console.log("[testUpdater] Deleting key",delkeys[n]);
+					externalDelFunc(delkeys[n]); // or any other arbritrary magic!
+					cache.del(delkeys[n]);
+					cache.setComplete(delkeys[n]);	  
+				}
+				for(var n=0;n<getkeys.length;n++) {
+					console.log("[testUpdater] Setting key",getkeys[n]);
+					if(getkeys[n] == "something not here") {
+				    cache.setFail(getkeys[n]); // you can mark certain keys as failing. So this 'set' failed.
+				                               // this is 'fail fast' - note, any key request not marked 
+				                               // with `setComplete(key)` is automatically considered failing
+				                               // at the end of the call
+				  } else {
+				      cache.set(getkeys[n],externalGetFunc(getkeys[n])); // or any other arbritrary magic!
+				      //cache.setComplete(keys[n]); // can be done, automatically marked as complete when cache.set is called
+				  }
+				}
+
+				SOME_NEW_KEY = base32.randomBase32(8);
+				SOME_NEW_KEY_VAL = base32.randomBase32(8);
+				cache.set('random'+SOME_NEW_KEY,SOME_NEW_KEY_VAL);
+
+				SOMEVAL = base32.randomBase32(8);
+				cache.set('newkey',SOMEVAL);  // the updater may also set new keys during the update
+				                            // (opportunistic caching)
+				return Promise.resolve(); // should always return a Promise - and should resolve() unless
+				                        // critical error happened.
+			},
+			function(){
+				console.trace("[testUpdater] OnShutdown");
+			},
+			{
+				interval: 5000,
+				id: 'testUpdater2',
+				equalityCB: function(key,newval,oldval) {
+					console.log("called equalityCB!!!");
+					calledEqualityCB++;
+					if(newval == oldval) {
+						return true;
+					} else {	
+						return false;
+					}
+				}
+			});
+
+
+			var brokenUpdater = new cache.Updater(function(cache){
+				// this - refers to the Updater
+				log.debug("brokenUpdater update()");
+				throw "crap";
+			},
+			function(){
+				console.trace("[testUpdater] OnShutdown");
+			},
+			{
+				interval: 5000,
+				id: 'brokenUpdater',
+				equalityCB: function(key,newval,oldval) {
+					console.log("called equalityCB!!!");
+					calledEqualityCB++;
+					if(typeof newval == 'object' && typeof oldval == 'object'
+						&& newval.special && oldval.special) {
+						if(newval.special == oldval.special) 
+							return true;
+						else
+							return false;
+					}
+					if(newval == oldval) {
+						return true;
+					} else {	
+						return false;
+					}
+				}
+			});
+			/////////////////////////////////////////////////////////////////
+			/// END OF SETUP ////////////////////////////////////////////////
+			/////////////////////////////////////////////////////////////////
+
 			SAY("in doTest()");
 			
 			TEST.ok(true,"OK2");

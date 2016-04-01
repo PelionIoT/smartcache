@@ -106,7 +106,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                 	}
                     cursor.continue();
                 } else {
-                    log_dbg('Entries all displayed.');
+                    log_dbg('loadDB complete.');
                     resolve();
                 }
             };
@@ -220,13 +220,25 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                 indexedDB.onerror = genericErrorHandler;
                 log_dbg("creating DB");
                 var request = indexedDB.open(dbname, BACKING_VERSION);
+
+                if(!request) {
+                    log_err("Could not get a indexedDB databased request. Failing",request);
+                    reject();
+                    return;
+                }
+
                 request.onerror = function(event) {
                     reject();
                     log_err("Can't get indexedDB db why??:", event);
-                };
+                };                    
 
                 var createStore = function(_db) {
                     log_dbg('keystore: ',KEYSTORE);
+
+                    // _db.transaction.oncomplete = function(){
+                    //     log_dbg("************* GOT oncomplete");
+                    // };
+
                     var store = _db.createObjectStore(KEYSTORE, {
                         keyPath: '_key'
                     });
@@ -235,6 +247,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     store.createIndex('_keyIndex', '_key', {
                         unique: "true"
                     });
+
                 }
 
                 var on_connect_error = function(event) {
@@ -266,6 +279,10 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     },1000);
                 }
 
+                request.oncomplete = function(){
+                    log_dbg("************* GOT oncomplete (2)");
+                }
+
                 request.onsuccess = function(event) {
                     log_dbg("makeIndexDBBacking..onsuccess");
                     DB = event.target.result;
@@ -288,14 +305,14 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                         clearTimeout(_fix_wait_timer); _fix_wait_timer = null;
                     }
                     log_dbg("makeIndexDBBacking..onupgradeneeded", evt);
-                    var db = evt.currentTarget.result;
-                    if(!db.objectStoreNames.contains(KEYSTORE)) {
-                        log_dbg("object store created.");
-                        createStore(db);
-                        resolve();
-                    } else {
-                        resolve();
-                    }    
+                    DB = evt.target.result;
+                    // if(!DB.objectStoreNames.contains(KEYSTORE)) {
+                    log_dbg("object store not created. creating...");
+                    createStore(DB);
+                    //     resolve();
+                    // } else {
+                    //     resolve();
+                    // }    
 
                     // var store = db.createObjectStore(KEYSTORE, {
                     //     keyPath: 'key'
