@@ -30,6 +30,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
     var wrThrottle = undefined;
     var dlThrottle = undefined;
     var indexedDB = null;
+    var shimFix = false;
     if (opts) {
         if (opts.debug_mode) log_dbg = ON_log_dbg;
         if (opts.dbThrottle) {
@@ -37,6 +38,11 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
             wrThrottle = opts.dbThrottle;
             dlThrottle = opts.dbThrottle;
             indexedDB = opts.indexedDB;
+
+            // what is this?
+            // a fix for this crap: 
+            // https://github.com/axemclion/IndexedDBShim/issues/121
+            shimFix = opts.shimFix; 
         }
     }
     var BACKING_VERSION = 1; // if we make changes to the database - then increment this
@@ -248,13 +254,22 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     });                    
                 }
 
+                var _on_upgrade_fired = false;
+
+                var waitABitForShim = function() {
+                    setTimeout(function(){
+                        log_dbg("Waiting a bit for indexedDBshim");
+                    },1000);
+                }
+
                 request.onsuccess = function(event) {
                     log_dbg("makeIndexDBBacking..onsuccess");
                     DB = event.target.result;
                     DB.onerror = on_connect_error;
 
                     if(!DB.objectStoreNames.contains(KEYSTORE)) {
-                        createStore(DB);
+                        // HACK this should never happen!
+                        if(!shimFix) createStore(DB);
                         resolve();
 //                        doLoad(); // no need for this, its obviously empty
                     } else {
@@ -263,6 +278,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                 };
                 // called when the database is first created or when the version requested is newer.
                 request.onupgradeneeded = function(evt) {
+                    _on_upgrade_fired = true;
                     log_dbg("makeIndexDBBacking..onupgradeneeded", evt);
                     var db = evt.currentTarget.result;
                     if(!db.objectStoreNames.contains(KEYSTORE)) {
