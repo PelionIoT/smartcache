@@ -63,7 +63,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
     // };
     var makeTuple = function(key, val) {
             return {
-                key: key,
+                _key: key,
                 val: val
             };
         };
@@ -222,9 +222,11 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                 var createStore = function(_db) {
                     log_dbg('keystore: ',KEYSTORE);
                     var store = _db.createObjectStore(KEYSTORE, {
-                        keyPath: 'key'
+                        keyPath: '_key'
                     });
-                    store.createIndex('key', 'key', {
+                    // to avoid possible issue from this sort of crap:
+                    // https://github.com/axemclion/IndexedDBShim/issues/199
+                    store.createIndex('_keyIndex', '_key', {
                         unique: "true"
                     });
                 }
