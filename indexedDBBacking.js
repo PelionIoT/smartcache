@@ -29,19 +29,22 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
     var rdThrottle = undefined;
     var wrThrottle = undefined;
     var dlThrottle = undefined;
+    var indexedDB = null;
     if (opts) {
         if (opts.debug_mode) log_dbg = ON_log_dbg;
         if (opts.dbThrottle) {
             rdThrottle = opts.dbThrottle;
             wrThrottle = opts.dbThrottle;
             dlThrottle = opts.dbThrottle;
+            indexedDB = opts.indexedDB;
         }
     }
     var BACKING_VERSION = 1; // if we make changes to the database - then increment this
     // and fix onupgradeneeded below.
     var KEYSTORE = "data";
     // In the following line, you should include the prefixes of implementations you want to test.
-    var indexedDB = window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB;
+    if(indexedDB === null || indexedDB === undefined)
+        indexedDB = window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB;
     // Moreover, you may need references to some window.IDB* objects:
     var IDBTransaction = window.IDBTransaction = window.IDBTransaction || window.webkitIDBTransaction || window.msIDBTransaction || {
         READ_WRITE: "readwrite"
@@ -63,7 +66,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                 key: key,
                 val: val
             };
-        }
+        };
         // called after start to load initial data into cache.
     var loadDB = function(cache) {
         return new Promise(function(resolve, reject) {
@@ -73,7 +76,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
             var res = objectStore.openCursor();
             res.onerror = function(e){
             	reject(e);
-            }
+            };
             res.onsuccess = function(event) {
                 var cursor = event.target.result;
                 if (cursor) {
@@ -215,31 +218,61 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     reject();
                     log_err("Can't get indexedDB db why??:", event);
                 };
-                request.onsuccess = function(event) {
-                    log_dbg("makeIndexDBBacking..onsuccess");
-                    DB = event.target.result;
-                    DB.onerror = genericErrorHandler;
-                    loadDB(cache).then(function(){
-                    	resolve(cache);
-                    },function(e){
-                    	log_err("Error during database load:",e);
-                    	reject(e);
-                    }).catch(function(e){
-                    	log_err("Exception occurred while loading DB:",e);
-                    	reject(e);
-                    });
-//                    resolve();
-                };
-                // called when the database is first created or when the version requested is newer.
-                request.onupgradeneeded = function(evt) {
-                    log_dbg("makeIndexDBBacking..onupgradeneeded", evt);
-                    var db = evt.currentTarget.result;
+
+                var createStore = function(db) {
                     var store = db.createObjectStore(KEYSTORE, {
                         keyPath: 'key'
                     });
                     store.createIndex('key', 'key', {
                         unique: "true"
                     });
+                }
+
+                var on_connect_error = function(event) {
+                    log_err("Database error: " + event.target.errorCode);
+                    reject(event.target.errorCode);
+                };
+
+                var doLoad = function() {
+                    loadDB(cache).then(function(){
+                        resolve(cache);
+                    },function(e){
+                        log_err("Error during database load:",e);
+                        reject(e);
+                    }).catch(function(e){
+                        log_err("Exception occurred while loading DB:",e);
+                        reject(e);
+                    });                    
+                }
+
+                request.onsuccess = function(event) {
+                    log_dbg("makeIndexDBBacking..onsuccess");
+                    DB = event.target.result;
+                    DB.onerror = on_connect_error;
+
+                    if(!DB.objectStoreNames.contains(KEYSTORE)) {
+                        createStore();
+                        resolve();
+//                        doLoad(); // no need for this, its obviously empty
+                    } else {
+                        doLoad();
+                    }
+                };
+                // called when the database is first created or when the version requested is newer.
+                request.onupgradeneeded = function(evt) {
+                    log_dbg("makeIndexDBBacking..onupgradeneeded", evt);
+                    var db = evt.currentTarget.result;
+                    if(!db.objectStoreNames.contains(KEYSTORE)) {
+                        createStore(db);
+                    }    
+
+                    // var store = db.createObjectStore(KEYSTORE, {
+                    //     keyPath: 'key'
+                    // });
+                    // store.createIndex('key', 'key', {
+                    //     unique: "true"
+                    // });
+
                     // Use transaction oncomplete to make sure the objectStore creation is 
                     // finished before adding data into it.
                     // NOTE - the onsuccess handler is triggered after the onupgradeneeded handler runs 
