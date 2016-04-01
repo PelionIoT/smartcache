@@ -254,10 +254,14 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                     });                    
                 }
 
+                // what is this?
+                // a fix for this crap: 
+                // https://github.com/axemclion/IndexedDBShim/issues/121
                 var _on_upgrade_fired = false;
+                var _fix_wait_timer = null;
 
                 var waitABitForShim = function() {
-                    setTimeout(function(){
+                    _fix_wait_timer = setTimeout(function(){
                         log_dbg("Waiting a bit for indexedDBshim");
                     },1000);
                 }
@@ -279,10 +283,16 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                 // called when the database is first created or when the version requested is newer.
                 request.onupgradeneeded = function(evt) {
                     _on_upgrade_fired = true;
+                    if(_fix_wait_timer) {
+                        clearTimeout(_fix_wait_timer); _fix_wait_timer = null;
+                    }
                     log_dbg("makeIndexDBBacking..onupgradeneeded", evt);
                     var db = evt.currentTarget.result;
                     if(!db.objectStoreNames.contains(KEYSTORE)) {
                         createStore(db);
+                        resolve();
+                    } else {
+                        resolve();
                     }    
 
                     // var store = db.createObjectStore(KEYSTORE, {
