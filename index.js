@@ -1025,7 +1025,8 @@ var SmartCache = function(opts) {
      *     {
      *        ttl: 1000, // the TTL timeout in milliseconds. If not
      *                   // set the cache will never go old
-     *        updater: myUpdater  // an instance of an Updater
+     *        updater: myUpdater,  // an instance of an Updater
+     *        noBacking: true      // if true the backing will not be written to (default: false)
      *     }
      * @param updater
      * @return {Promise} A Promise which fulfills when the Updater sets the data, or otherwise fulfills
@@ -1053,14 +1054,16 @@ var SmartCache = function(opts) {
 
         var updater = undefined;
         var ttl = undefined;
+        var noBacking = undefined;
         if(typeof opts === 'object') {
             if(opts.updater !== undefined) {
                 if(opts.updater instanceof smartcache.Updater) updater = opts.updater;
-            } else {
-                throw new TypeError("Bad option. option.updater must be an Updater");
+                else
+                    throw new TypeError("Bad option. option.updater must be an Updater");
             }
             if(typeof opts.ttl === 'number' && opts.ttl > 0)
                 ttl = opts.ttl;
+            noBacking = opts.noBacking;
         } else if(defaultTTL) {
             ttl = defaultTTL;
         }
@@ -1077,11 +1080,14 @@ var SmartCache = function(opts) {
         sendEvent(existing,'caller',updater);
         if(updater) {
             return updater.setData(key).then(function(){
-                if(backing) {
+                if(backing && !noBacking) {
                     backing._write(key,val);
                 }
             });
         } else {
+            if(!noBacking) {
+                backing._write(key,val);
+            }
             return Promise.resolve();
         }
 

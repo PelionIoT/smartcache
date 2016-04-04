@@ -196,6 +196,39 @@ this.backing_store =  {
 
 			SAY("@key2");
 
+
+			cache.setData('keyNoUpdater',99,{
+				ttl: 1000
+			});
+
+			cache.setData('keyNoUpdaterNoBacking','will vanish',{
+				noBacking: true,
+				ttl: 1000
+			});
+
+			SAY("@keyNoUpdater tests, sets");
+
+			var val_keyNoUpdater = null;
+			var val_keyNoUpdaterNoBacking = 'no update';
+
+			setTimeout(function(){
+				SAY("@keyNoUpdater tests, gets");
+				cache.getData('keyNoUpdater').then(function(d){
+					val_keyNoUpdater = d;
+				},function(){
+					console.error("failed on keyNoUpdater")
+					TEST.ok(false,"failed on keyNoUpdater");
+				});
+				cache.getData('keyNoUpdaterNoBacking').then(function(d){
+					if(d) {
+						val_keyNoUpdaterNoBacking = d;						
+					}
+				},function(){
+					console.error("failed on keyNoUpdater");
+					TEST.ok(false,"failed on keyNoUpdaterNoBacking");
+				});
+			},2000);
+
 			cache.setData('key2',3,{
 				updater: testUpdater
 			});
@@ -240,18 +273,6 @@ this.backing_store =  {
 				cache.setData('specialTest',{ special: 102 })
 			},500)
 
-			setTimeout(function(){
-				
-			},1000)
-
-
-			// setTimeout(function(){
-			// 	cache.setData('key1',6);	
-			// },4000);
-
-			// setTimeout(function(){
-			// 	cache.setData('key1',7);
-			// },6000);
 			var RUN = 0;
 			var T1 = [];
 			T1[0] = 0;
@@ -338,6 +359,11 @@ this.backing_store =  {
 				});
 	     		console.log("RET=",ret);
 
+
+			// var val_keyNoUpdater = null;
+			// var val_keyNoUpdaterNoBacking = null;
+				TEST.equal(val_keyNoUpdater,99,"No updater key w/backing, ok.");
+				TEST.equal(val_keyNoUpdaterNoBacking,'no update',"No updater, no backing, w/ TTL. gone.");
 
 	     		TEST.ok(newKeyTestEvent && typeof newKeyTestEvent == 'object',"change event");
 	     		TEST.equal(newKeyTestEvent.key,'newkey','change Event data ok.');
