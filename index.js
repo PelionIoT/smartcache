@@ -1015,6 +1015,13 @@ var SmartCache = function(opts) {
 
     }
 
+    this.invalidateKey = function(key) {
+        // drop the key out of cache. If it has an updater
+        // it's updater should run the next time it's needed.
+        cache.del(key);         
+    }
+
+
     /**
      * Sets data in cache.
      * A word on Updaters. If the Updater is set, it will used to update the data after the

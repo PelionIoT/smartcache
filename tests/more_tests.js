@@ -29,9 +29,12 @@ var VALS = {
 'key4' : 1000
 };
 
+var GARBAGE = 'garbage';
+
 var externalSetFunc = function(key,val) {
 	console.log("externalSetFunc(",key,",",val,")");
-	VALS[key] = val;
+	if(val !== GARBAGE)
+		VALS[key] = val;
 }
 var externalDelFunc = function(key,val) {
 	console.log("externalDelFunc(",key,")");
@@ -268,6 +271,29 @@ this.backing_store =  {
 				}
 			});
 
+			var invalidateTestRan = false;
+
+			setTimeout(function(){
+				cache.setData('key4',33).then(function(){
+					cache.setData('key4',GARBAGE,{noBacking: true}).then(function(){
+						cache.getData('key4').then(function(r){
+							if(r == GARBAGE) {
+								invalidateTestRan = true;
+							}
+						})
+					});
+				});
+			},600);
+
+			setTimeout(function(){
+				cache.invalidateKey('key4');
+				TEST.ok(invalidateTestRan,"Invalid set test ran...");
+				cache.getData('key4').then(function(r){
+					TEST.ok(typeof r !== 'undefined',"post-invalidate, caused a reload of a key");
+ 					TEST.ok(r != GARBAGE,"post-invalidate, key was not 'garbage'");
+				})				
+			},1000)
+
 
 			setTimeout(function(){
 				cache.setData('specialTest',{ special: 102 })
@@ -342,6 +368,15 @@ this.backing_store =  {
 					TEST.equal('key1',gotEvent,"delete event");
 				},200);
 
+				cache.getData('non-existant-key').then(function(r){
+					SAY("NON non-existant-key 1",r);
+				},function(e){
+					SAY("NON non-existant-key 2",e);
+				}).catch(function(e){
+					SAY("NON non-existant-key 3");
+				})
+
+
 			},10000);
 
 
@@ -365,6 +400,7 @@ this.backing_store =  {
 				TEST.equal(val_keyNoUpdater,99,"No updater key w/backing, ok.");
 				TEST.equal(val_keyNoUpdaterNoBacking,'no update',"No updater, no backing, w/ TTL. gone.");
 
+				TEST.ok(invalidateTestRan,"sanity check: invalidateKey test ran.");
 	     		TEST.ok(newKeyTestEvent && typeof newKeyTestEvent == 'object',"change event");
 	     		TEST.equal(newKeyTestEvent.key,'newkey','change Event data ok.');
 	     		TEST.equal(newKeyTestEvent.val,SOMEVAL,'Random data from Updater passed.');
