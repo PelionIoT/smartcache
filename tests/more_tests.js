@@ -291,7 +291,7 @@ this.backing_store =  {
 				cache.getData('key4').then(function(r){
 					TEST.ok(typeof r !== 'undefined',"post-invalidate, caused a reload of a key");
  					TEST.ok(r != GARBAGE,"post-invalidate, key was not 'garbage'");
-				})				
+				});
 			},1000)
 
 

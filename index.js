@@ -1018,7 +1018,11 @@ var SmartCache = function(opts) {
     this.invalidateKey = function(key) {
         // drop the key out of cache. If it has an updater
         // it's updater should run the next time it's needed.
-        cache.del(key);         
+        cache.del(key);
+        var u = getUpdaterByKey(key);
+        if(u) {
+            u.getData(key); // schedule an updater ask for the data.
+        }
     }
 
 
@@ -1150,7 +1154,7 @@ var SmartCache = function(opts) {
             // if its in cache, fast-track it
             return Promise.resolve(d);
         }
-        var prefer = null;
+        var prefer = 'either';
         if(opts && opts.prefer) {
             prefer = opts.prefer;
         }
@@ -1173,11 +1177,41 @@ var SmartCache = function(opts) {
                         stats.misses++;
                         resolve(cache.get(key));
                     },function(err){
-                        log_err("Error back from Updater - no backing.",err);
-                        reject(err);
+                        if(backing) {
+                            log_err("Error back from Updater - will try backing:",err);                            
+                            backing._read(key).then(function(r){
+                                log_dbg("got read resolve");
+                                stats.misses++;
+                                resolve(r);
+                            },function(e){
+                                log_dbg("   -> reject from storage.",e);                                
+                                reject(e);
+                            }).catch(function(e){
+                                log_dbg("   -> @catch from storage.",e);                                
+                                reject(e);                                
+                            });
+                        } else {
+                            log_err("Error back from Updater - no backing.",err);
+                            reject(err);
+                        }
                     }).catch(function(e){
-                        log_err("@catch ",e);
-                        reject(e);
+                        if(backing) {
+                            log_err("@catch Updater - will try backing:",err);                            
+                            backing._read(key).then(function(r){
+                                log_dbg("got read resolve");
+                                stats.misses++;
+                                resolve(r);
+                            },function(e){
+                                log_dbg("   -> reject from storage.",e);                                
+                                reject(e);
+                            }).catch(function(e){
+                                log_dbg("   -> @catch from storage.",e);                                
+                                reject(e);                                
+                            });
+                        } else {
+                            log_err("@catch ",e);
+                            reject(e);
+                        }
                     });
                 } else {
 
