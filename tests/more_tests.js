@@ -11,7 +11,8 @@ var base32 = require('base32');
 
 
 var cache = new SmartCache({
-	debug_mode: true
+	debug_mode: true,
+	updateAfterMisses: true
 });
 
 var double = function(num) {
@@ -26,7 +27,8 @@ var VALS = {
 'key1' : 5,
 'key2' : 50,
 'key3' : 500,
-'key4' : 1000
+'key4' : 1000,
+'oppRead' : 78704
 };
 
 var GARBAGE = 'garbage';
@@ -204,10 +206,18 @@ this.backing_store =  {
 				ttl: 1000
 			});
 
+			cache.setData('oppRead', 101, {ttl: 500});
+
+			setTimeout(function(){
+				cache.getData
+			},1000);
+
 			cache.setData('keyNoUpdaterNoBacking','will vanish',{
 				noBacking: true,
 				ttl: 1000
 			});
+
+
 
 			SAY("@keyNoUpdater tests, sets");
 

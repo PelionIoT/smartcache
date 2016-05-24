@@ -66,6 +66,7 @@ var SmartCache = function(opts) {
 
     var defaultTTL = undefined;
     var defaultThrottle = 2000;
+    var updateAfterMisses = false;
 
     var log_dbg = function() {};
 
@@ -73,6 +74,13 @@ var SmartCache = function(opts) {
         if(opts.debug_mode) log_dbg = ON_log_dbg;
         if(typeof opts.defaultTTL === 'number' && opts.defaultTTL > 0) defaultTTL = opts.defaultTTL;
         if(typeof opts.defaultThrottle === 'number' && opts.defaultThrottle > 0) defaultThrottle = opts.defaultThrottle;
+
+        // if updateAfterMisses is set, then the SmartCache will ask the 
+        // Updater to try to update keys which might have been in a backing, but had fallen out of 
+        // cache, at the next opportunity of the Updater running.
+        if(opts.updateAfterMisses) {
+            updateAfterMisses = true;
+        }
     }
 
     var cache = new jsCache();
@@ -338,14 +346,18 @@ var SmartCache = function(opts) {
 //log_dbg("doRead 4")
                         cache.set(keyz[n],pairs[keyz[n]],backingTTL);
                         if(proms[keyz[n]]) { // fulfill any promises
-                           proms[keyz[n]].resolve(pairs[keyz[n]]);
-                           delete proms[keyz[n]];
+                            if(typeof proms[keyz[n]].resolve == 'function') {
+                                proms[keyz[n]].resolve(pairs[keyz[n]]);     
+                            }                           
+                            delete proms[keyz[n]];
                         }
                     }
                     log_dbg("Backing",_selfBacking.id(),"set",keyz.length,"values");
                     keyz = Object.keys(proms);
                     for(var n=0;n<keyz.length;n++) {
-                        proms[keyz[n]].reject();
+                        if(typeof proms[keyz[n]].reject == 'function') {
+                            proms[keyz[n]].reject();                            
+                        }
                     }
                     log_dbg("Backing",_selfBacking.id(),"had",keyz.length,"reject()s");
                     // }
@@ -460,6 +472,18 @@ var SmartCache = function(opts) {
         this._writeQ[key] = token;
         return token;
     }
+    cacheDelegate.prototype.addReadTokenNoPromise = function(key) {
+        this._dirty = true;
+        if(this._readQ[key]) {
+            return this._readQ[key];
+        }
+        var token = {
+            key: key
+        };
+        this._readQ[key] = token;
+        return token;
+    }
+
     cacheDelegate.prototype.addReadToken = function(key) {
         this._dirty = true;
         if(this._readQ[key]) {
@@ -467,7 +491,7 @@ var SmartCache = function(opts) {
         }
         var token = {
             key: key
-        }
+        };
         token.promise = new Promise(function(resolve,reject){
             token.resolve = resolve;
             token.reject = reject;
@@ -482,7 +506,7 @@ var SmartCache = function(opts) {
         }
         var token = {
             key: key
-        }
+        };
         token.promise = new Promise(function(resolve,reject){
             token.resolve = resolve;
             token.reject = reject;
@@ -519,8 +543,11 @@ var SmartCache = function(opts) {
         log_dbg('past set');
         if(this._readQ[key]) { // readQ - if the data is 'set' by the Updater
                                // then it has accomplished the 'read'
-            this._readQ[key].resolve();
- //           delete this._readQ[key];
+            // it's possible it might be an opportunistic read (see 'updateAfterMisses'
+            // options) in which case there would be no promise resolve() func
+            if(typeof this._readQ[key].resolve == 'function') {
+                this._readQ[key].resolve();
+            }
         }
     }
     cacheDelegate.prototype.get = function(key) {
@@ -552,7 +579,9 @@ var SmartCache = function(opts) {
             return;            
         }
         if(this._readQ[key]) {
-            this._readQ[key].resolve();
+            if(typeof this._readQ[key].resolve == 'function') {
+                this._readQ[key].resolve();                
+            }
             delete this._readQ[key];
             return;            
         }
@@ -570,7 +599,9 @@ var SmartCache = function(opts) {
             return;            
         }
         if(this._readQ[key]) {
-            this._readQ[key].reject(e);
+            if(typeof this._readQ[key].reject == 'function') {
+                this._readQ[key].reject(e);
+            }
             delete this._readQ[key];
             return;            
         }
@@ -588,7 +619,9 @@ var SmartCache = function(opts) {
         for(var Q in Qs) {
             var keyz = Object.keys(Qs[Q]);
             for(var n=0;n<keyz.length;n++) {
-                Qs[Q][keyz[n]].reject();
+                if(typeof Qs[Q][keyz[n]].reject == 'function') {
+                    Qs[Q][keyz[n]].reject();                    
+                }
                 delete Qs[Q][keyz[n]];
             }            
         }
@@ -746,6 +779,9 @@ var SmartCache = function(opts) {
             var ret = currentDelgCache.addDelToken(key);
             selfUpdate();
             return ret.promise;
+        }
+        this.askForOpportunisticRead = function(key) {
+            currentDelgCache.addReadTokenNoPromise(key);                        
         }
 
         // just ask for an update
@@ -1224,9 +1260,17 @@ var SmartCache = function(opts) {
             } else {
                 log_dbg("trying backing for:",key);
                 backing._read(key).then(function(r){
-                    log_dbg("got read resolve");
+                    log_dbg("got read resolve (via backing)");
                     stats.misses++;
                     resolve(r);
+
+                    if(updateAfterMisses) {
+                        log_dbg("   -> resolved with backing, but asking for opportunistic read.");
+                        var u = getUpdaterByKey(key);
+                        if(u) {
+                            u.askForOpportunisticRead(key);
+                        }
+                    }
                     // TODO: run updater anyway?
                     // we had to use the backing to get the value, but since it was asked for
                     // should it be updater?
