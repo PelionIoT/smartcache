@@ -470,10 +470,12 @@ var SmartCache = function(opts) {
             token.reject = reject;
         });
         this._writeQ[key] = token;
+        console.trace("ARI ********* _writeQ",key,this._writeQ);
         return token;
     }
     cacheDelegate.prototype.addReadTokenNoPromise = function(key) {
         this._dirty = true;
+        log_dbg("ARI ********* _readQ",key,this._readQ);
         if(this._readQ[key]) {
             return this._readQ[key];
         }
@@ -524,6 +526,7 @@ var SmartCache = function(opts) {
     }
 
     cacheDelegate.prototype.getReadReqs = function() {
+        log_dbg('ARI getReadReqs:',Object.keys(this._readQ));
         return Object.keys(this._readQ);
     }
     cacheDelegate.prototype.getWriteReqs = function() {
@@ -540,13 +543,17 @@ var SmartCache = function(opts) {
         log_dbg("cacheDelegate:",key,val,ttl);
         log_dbg("updater:",this._updater)
         _setData(key,val,ttl,this._updater);
-        log_dbg('past set');
+        log_dbg('past set',this._readQ);
         if(this._readQ[key]) { // readQ - if the data is 'set' by the Updater
                                // then it has accomplished the 'read'
             // it's possible it might be an opportunistic read (see 'updateAfterMisses'
             // options) in which case there would be no promise resolve() func
             if(typeof this._readQ[key].resolve == 'function') {
                 this._readQ[key].resolve();
+            } else {
+                // if the data is set - but it does not have a resolve()
+                // function, then just delete it
+                delete this._readQ[key];
             }
         }
     }
@@ -781,7 +788,9 @@ var SmartCache = function(opts) {
             return ret.promise;
         }
         this.askForOpportunisticRead = function(key) {
-            currentDelgCache.addReadTokenNoPromise(key);                        
+            log_dbg("ARI askForOpportunisticRead:",key);
+            currentDelgCache.addReadTokenNoPromise(key);  
+            selfUpdate();                      
         }
 
         // just ask for an update
@@ -964,8 +973,8 @@ var SmartCache = function(opts) {
                 }
                 updaterTableByKey[key] = uid;
                 updater._ref++;
-                log_dbg("Adding updater:",uid,"(ref =",updater._ref+")");
                 updatersById[uid] = updater;                
+                log_dbg("Adding updater:",uid,"(ref =",updater._ref+")",updaterTableByKey);
             } else {
                 if(!updatersById[uid]) {
                     updatersById[uid] = updater;
@@ -976,6 +985,9 @@ var SmartCache = function(opts) {
         }
     }
 
+    var getUpdaterByUpdaterId = function(id) {
+        return updatersById[id];
+    }
 
     /**
      * Internal _setData is used by the cacheDelegate
@@ -986,7 +998,7 @@ var SmartCache = function(opts) {
      * @param {[type]} updater [description]
      */
     var _setData = function(key,val,ttl,updater) {
-        
+        log_dbg("ARI _setData ",arguments);
         var sendEvent = function(existing,source,id) {
             var change = false;
             log_dbg("sendEvent",arguments);
@@ -1105,7 +1117,12 @@ var SmartCache = function(opts) {
         if(typeof opts === 'object') {
             if(opts.updater !== undefined) {
                 if(opts.updater instanceof smartcache.Updater) updater = opts.updater;
-                else
+                else if(typeof opts.updater === 'string') {
+                    updater = getUpdaterByUpdaterId(opts.updater);
+                    if(!updater) {
+                        throw new TypeError("Bad paran. updater must be valid updater ID or Updater object.");
+                    }
+                } else
                     throw new TypeError("Bad option. option.updater must be an Updater");
             }
             if(typeof opts.ttl === 'number' && opts.ttl > 0)
@@ -1116,7 +1133,7 @@ var SmartCache = function(opts) {
         }
         var u_id = null;
         var existing = cache.get(key);
-        if(!existing && updater) {
+        if(updater) { // !existing && 
             _addUpdater(key,updater);
         }
         if(!updater) {
@@ -1265,10 +1282,12 @@ var SmartCache = function(opts) {
                     resolve(r);
 
                     if(updateAfterMisses) {
-                        log_dbg("   -> resolved with backing, but asking for opportunistic read.");
+                        log_dbg("   -> resolved with backing, but asking for opportunistic read. [",key,"]");
                         var u = getUpdaterByKey(key);
                         if(u) {
                             u.askForOpportunisticRead(key);
+                        } else {
+                            log_dbg("      oop. no updater for key",key);
                         }
                     }
                     // TODO: run updater anyway?
@@ -1316,7 +1335,7 @@ var SmartCache = function(opts) {
     
     cache.on('del',function(key){
         if(!deleteTableByKey[key]) {
-            log_dbg("Key falling out of cache:",key);
+            log_dbg("Key falling out of cache:",key,updaterTableByKey);
             //if(autorefresh) {}
             return;
         }
