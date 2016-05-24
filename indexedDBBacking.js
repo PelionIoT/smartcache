@@ -67,9 +67,10 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
     //   // Create an objectStore for this database
     //   var objectStore = db.createObjectStore("name", { keyPath: "myKey" });
     // };
-    var makeTuple = function(key, val) {
+    var makeTuple = function(key, val, timeval) {
             return {
                 _key: key,
+                _last: timeval,
                 val: val
             };
         };
@@ -119,6 +120,9 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
             return new Promise(function(resolve, reject) {
                 //			var trans = DB.transaction([KEYSTORE],IDBTransaction.READ_WRITE);  // make transaction
                 var trans = DB.transaction([KEYSTORE], "readwrite"); // make transaction
+                var keyz = Object.keys(pairs);
+                var store = trans.objectStore(KEYSTORE);
+
                 trans.oncomplete = function(evt) {
                     log_dbg("transaction complete.");
                     resolve();
@@ -127,19 +131,43 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                         log_err("Error in writeCB:", evt);
                         reject(evt);
                     }
-                var keyz = Object.keys(pairs);
-                var store = trans.objectStore(KEYSTORE);
                 for (var n = 0; n < keyz.length; n++) {
-                    var pair = makeTuple(keyz[n], pairs[keyz[n]]);
-                    log_dbg("put:", pair);
-                    var req = store.put(pair);
-                    (function(pair) {
-                        req.onerror = function() {
-                            log_err("Error adding", pair);
+                    var pair = makeTuple(keyz[n], pairs[keyz[n]].val, pairs[keyz[n]].last);
+
+                    (function(_pair) {
+                        var step2 = function() {
+                            var req2 = store.put(_pair);
+
+                            req2.onerror = function() {
+                                log_err("Error adding", _pair);
+                            }
+                        }
+
+                        log_dbg("put:", _pair);
+                        var req1 = store.get(keyz[n]);
+
+                        req1.onsuccess = function(ev) {
+                            if(typeof req1.result === 'object') {
+                                if(req1.result._last) {
+                                    if(req1.result._last < _pair._last) {
+                                        step2();
+                                    } else {
+                                        log_dbg("data was stale, not writing",_pair);
+                                    }
+                                } else {
+                                    step2();
+                                }
+                            } else {
+                                step2();
+                            }   
+                        }
+
+                        req1.onerror = function(ev) {
+                            log_err("Error in writeCB - reading",_pair);
                         }
                     })(pair);
                 }
-                log_dbg("transaction: wrote", keyz.length, "to indexedDB");
+                log_dbg("transaction: wrote", keyz.length, "keys to indexedDB");
             });
         },
         readCB: function(pairs, cache) { // readCB

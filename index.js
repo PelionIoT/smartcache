@@ -132,7 +132,11 @@ var SmartCache = function(opts) {
      * `writeCB` A callback which should return a Promise which resolves when the write is complete.
      * The callback is of the form:
      *      function(pairs) {
-     *          // pairs is an Array of {key:'key',val:'val'} pairs 
+     *          // pairs is a map of one or more keys like
+     *           {  
+     *              'somekey' : { val: 'someval', 
+     *                            last: '1901232938' // timestamp of data submission
+     *           } }
      *          // which should be written to storage
      *      }
      * `readCB` A callback which should return a Promise which resolves when a read is complete.
@@ -257,7 +261,7 @@ var SmartCache = function(opts) {
         }
 
 
-        this._write = function(key,val) {
+        this._write = function(key,val,time) {
             var doWrite = function(){
                 var tempQ = writeQ;
                 writeQ = {};
@@ -270,7 +274,13 @@ var SmartCache = function(opts) {
                 });                
             }
 
-            writeQ[key] = val;
+            writeQ[key] = {};
+            writeQ[key].val = val;
+            if(time !== undefined) {
+                writeQ[key].last = time;
+            } else {
+                writeQ[key].last = Date.now();
+            }
             if(wrThrottle) {
                 if(writerTimeout) {
                     return;
@@ -470,12 +480,12 @@ var SmartCache = function(opts) {
             token.reject = reject;
         });
         this._writeQ[key] = token;
-        console.trace("ARI ********* _writeQ",key,this._writeQ);
+//        console.trace("ARI ********* _writeQ",key,this._writeQ);
         return token;
     }
     cacheDelegate.prototype.addReadTokenNoPromise = function(key) {
         this._dirty = true;
-        log_dbg("ARI ********* _readQ",key,this._readQ);
+//        log_dbg("ARI ********* _readQ",key,this._readQ);
         if(this._readQ[key]) {
             return this._readQ[key];
         }
@@ -526,7 +536,7 @@ var SmartCache = function(opts) {
     }
 
     cacheDelegate.prototype.getReadReqs = function() {
-        log_dbg('ARI getReadReqs:',Object.keys(this._readQ));
+//        log_dbg('ARI getReadReqs:',Object.keys(this._readQ));
         return Object.keys(this._readQ);
     }
     cacheDelegate.prototype.getWriteReqs = function() {
@@ -543,7 +553,7 @@ var SmartCache = function(opts) {
         log_dbg("cacheDelegate:",key,val,ttl);
         log_dbg("updater:",this._updater)
         _setData(key,val,ttl,this._updater);
-        log_dbg('past set',this._readQ);
+//        console.trace('past set',this._readQ);
         if(this._readQ[key]) { // readQ - if the data is 'set' by the Updater
                                // then it has accomplished the 'read'
             // it's possible it might be an opportunistic read (see 'updateAfterMisses'
@@ -788,7 +798,7 @@ var SmartCache = function(opts) {
             return ret.promise;
         }
         this.askForOpportunisticRead = function(key) {
-            log_dbg("ARI askForOpportunisticRead:",key);
+//            log_dbg("ARI askForOpportunisticRead:",key);
             currentDelgCache.addReadTokenNoPromise(key);  
             selfUpdate();                      
         }
@@ -998,7 +1008,7 @@ var SmartCache = function(opts) {
      * @param {[type]} updater [description]
      */
     var _setData = function(key,val,ttl,updater) {
-        log_dbg("ARI _setData ",arguments);
+//        log_dbg("ARI _setData ",arguments);
         var sendEvent = function(existing,source,id) {
             var change = false;
             log_dbg("sendEvent",arguments);
@@ -1021,12 +1031,13 @@ var SmartCache = function(opts) {
             ttl = defaultTTL;
         }
         var existing = cache.get(key);
-        log_dbg("existing:",existing);
+        log_dbg("key:",key,"existing:",existing,"newval:",val);
+        var t = Date.now();
         cache.set(key,val,ttl);
         sendEvent(existing,'updater',updater.id());
         updaterTableByKey[key] = updater.id();
         if(backing) {
-            backing._write(key,val);
+            backing._write(key,val,t);
         }
     }
 
@@ -1140,21 +1151,24 @@ var SmartCache = function(opts) {
             updater = getUpdaterByKey(key);
         }
         // update value in cache
+        var t = Date.now();
         cache.set(key,val,ttl);
         sendEvent(existing,'caller',updater);
         if(updater) {
             return updater.setData(key).then(function(){
                 if(backing && !noBacking) {
-                    backing._write(key,val);
+                    backing._write(key,val,t);
                 }
+            },function(){
+                log_dbg("Note: updater failed key:",key);
+                cache.set(key,existing,ttl);
             });
         } else {
             if(!noBacking) {
-                backing._write(key,val);
+                backing._write(key,val,t);
             }
             return Promise.resolve();
         }
-
     };
 
     this.runUpdaters = function(specified) {
