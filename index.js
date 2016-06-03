@@ -66,7 +66,10 @@ var SmartCache = function(opts) {
 
     var defaultTTL = undefined;
     var defaultThrottle = 2000;
-    var updateAfterMisses = false;
+    var updateAfterMisses = false; // this will run the Updater for the key, if the cache misses
+                                   // but the Updater is known
+    var defaultUpdater = null;     // if set, an Updater which is used for keys not in cache
+                                   // and with no known Updater assigned to them
 
     var log_dbg = function() {};
 
@@ -301,8 +304,15 @@ var SmartCache = function(opts) {
             var doDelete = function(){
                 var tempQ = deleteQ;
                 deleteQ = [];
-                deleteCB(Object.keys(tempQ)).then(function(){
+                var tempKeys = Object.keys(tempQ);
+                return deleteCB(tempKeys).then(function(){
                     log_dbg("_delete() complete");
+                    var _n = tempKeys.length;
+                    while(_n--) {
+                        if(typeof tempQ[tempKeys[_n]] == 'object' && tempQ[tempKeys[_n]].resolve) {
+                            tempQ[tempKeys[_n]].resolve();
+                        }
+                    }
                 },function(e){
                     log_err("error on writing to Backing",_id,e);
                 }).catch(function(err){
@@ -310,7 +320,17 @@ var SmartCache = function(opts) {
                 });                
             }
 
-            deleteQ[key] = 1;
+            var makeDelQEntry = function(key) {
+                deleteQ[key] = {};
+                deleteQ[key].promise = new Promise(function(resolve,reject){
+                    deleteQ[key].resolve = resolve;
+                    deleteQ[key].reject = reject;
+                });
+                return deleteQ[key].promise;
+            }
+//            deleteQ[key] = 1;
+            var p = makeDelQEntry(key);
+
             if(dlThrottle) {
                 if(deleteTimeout) {
                     return;
@@ -325,6 +345,8 @@ var SmartCache = function(opts) {
             } else {
                 doDelete();
             }
+
+            return p;
         };
 
         var readQ = {};
@@ -950,7 +972,7 @@ var SmartCache = function(opts) {
             if(u) {
                 u._ref--; if(u._ref < 0) u._ref = 0;
                 log_dbg("Decreasing Updater:",u_id,"ref count to",u._ref);
-                if(u._ref < 1) {
+                if(u._ref < 1 && (u_id != defaultUpdater)) {
                     log_dbg("Removing Updater:",u_id);
                     var tid = timerTable[u_id];
                     if(tid !== undefined) {
@@ -1045,11 +1067,12 @@ var SmartCache = function(opts) {
     // on any delete key
     // @param {String} source who asked for delete: 'updater' or 'user'
     var _deleteKey = function(key,source,updaterid) {
-        
+log_dbg("removeData #2")
         var u_id = updaterTableByKey[key];
         var u = getUpdaterByKey(key);
         if(u && ((source != 'updater') || 
             (updaterid != u_id))) {
+log_dbg("removeData #3")
             // the 'key' has an updater AND
             // if its NOT an updater calling, or its an Updater updating something
             // for which its not the Updater (whew)
@@ -1059,15 +1082,19 @@ var SmartCache = function(opts) {
 
             }); 
         } else {
+log_dbg("removeData #4")
             if(u_id) {
                 delete updaterTableByKey[key];
                 _removeUpdater(u_id);             
             }
+log_dbg("removeData #5")            
             cache.del(key);
             _emitter.emit('del',key,source,u_id);
             if(backing) {
+log_dbg("removeData #6")                
                 return backing._delete(key);
             } else {
+log_dbg("removeData #7")                
                 return Promise.resolve();
             }            
         }
@@ -1196,9 +1223,34 @@ var SmartCache = function(opts) {
             return Promise.reject("no updaters or all failed.");
     };
 
+    /**
+     * Installs an Updater to the cache. This will cause the Updater's update
+     * function to run based on its interval settings.
+     * @param {[type]} updater [description]
+     */
     this.addUpdater = function(updater) {
         _addUpdater(null,updater);
     };
+
+    /**
+     * Set the default Updater. The Updater must already be installed.
+     * This updater will be called when a key is not in cache, _and_ has no
+     * specified Updater.
+     * @param {[type]} updater_id [description]
+     */
+    this.setDefaultUpdater = function(updater_id) {
+        if(typeof updater_id == 'string') {
+            var updater = updatersById[updater_id];
+            if(updater) {
+                defaultUpdater = updater_id;               
+            } else {
+                throw new Error("Updater id "+updater_id+" is not known.");
+            }
+        } else {
+            throw new TypeError('bad parameter');
+        }
+
+    }
 
     /**
      * Gets data from the cache.
@@ -1281,12 +1333,32 @@ var SmartCache = function(opts) {
                         }
                     });
                 } else {
-
-                    //FIXME FIXME -->
-
-                    log_dbg("   no Updater, no Data! [",key,"]");
-                    // no updater, no data, just nothing:
-                    resolve();
+                    // FIXME - ARE MISSES resolve() or not??
+                    // use the defaultUpdater here
+                    if(defaultUpdater) {
+                        var u = updatersById[defaultUpdater];
+                        if(u) {
+                            log_dbg("attempt defaultUpdater",defaultUpdater,"for key:",key);
+                            u.getData(key).then(function(){
+                                stats.misses++;
+                                resolve(cache.get(key));
+                            },function(e){
+                                log_dbg("no result. failure @error",e);
+                                resolve();
+                            }).catch(function(e){
+                                log_err("failure @catch",e);
+                                resolve();
+                            });
+                        } else {
+                            log_err("default Updater is missing!! ",defaultUpdater,"null-ing out");
+                            defaultUpdater = null
+                            resolve();
+                        }
+                    } else {
+                        log_dbg("   no Updater, no Data! [",key,"]");
+                        // no updater, no data, just nothing:
+                        resolve();
+                    }
                 }
             } else {
                 log_dbg("trying backing for:",key);
@@ -1325,9 +1397,34 @@ var SmartCache = function(opts) {
                         });
                     } else {
                         log_dbg("No updater. No data.");
+
+                        if(defaultUpdater) {
+                            var u = updatersById[defaultUpdater];
+                            if(u) {
+                                log_dbg("attempt defaultUpdater",defaultUpdater,"for key:",key);
+                                u.getData(key).then(function(){
+                                    stats.misses++;
+                                    resolve(cache.get(key));
+                                },function(e){
+                                    log_dbg("no result. failure @error",e);
+                                    resolve();
+                                }).catch(function(e){
+                                    log_err("failure @catch",e);
+                                    resolve();
+                                });
+                            } else {
+                                log_err("default Updater is missing!! ",defaultUpdater,"null-ing out");
+                                defaultUpdater = null
+                                resolve();
+                            }
+                        } else {
+                            log_dbg("   no Updater, no Data! [",key,"]");
+                            // no updater, no data, just nothing:
+                            resolve();                        
+                        }
                         // no updater, no data, just nothing. ok.
                         // resolve to undefined
-                        resolve();
+//                        resolve();
                     }
                 }).catch(function(e){
                     log_err("@catch - error",e);
@@ -1378,17 +1475,18 @@ var SmartCache = function(opts) {
         }
         var updaters = Object.keys(updatersById);
         for(var n=0;n<updaters.length;n++) {
-            log_dbg("updater " + updaters[n] + " shutdown");
-            updatersById[updaters[n]].shutdown();
-            delete updatersById[updaters[n]];
+            if(updaters[n] != defaultUpdater) {
+                log_dbg("updater " + updaters[n] + " shutdown");
+                updatersById[updaters[n]].shutdown();
+                delete updatersById[updaters[n]];                
+            }
         }
 
         deleteTableByKey = {}; 
         updaterTableByKey = {};
         timerTable = {};
-        updatersById = {};
+//        updatersById = {};
     }
-
 
 
 

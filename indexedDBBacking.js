@@ -258,7 +258,7 @@ var makeIndexedDBBacking = function(cache, dbname, opts) {
                 request.onerror = function(event) {
                     reject();
                     log_err("Can't get indexedDB db why??:", event);
-                };                    
+                };
 
                 var createStore = function(_db) {
                     log_dbg('keystore: ',KEYSTORE);
