@@ -145,6 +145,7 @@ this.backing_store =  {
 			{
 				interval: 5000,
 				id: 'testUpdater2',
+				defaultTTL: 2000,
 				equalityCB: function(key,newval,oldval) {
 					console.log("called equalityCB!!!");
 					calledEqualityCB++;
@@ -196,15 +197,38 @@ this.backing_store =  {
 
 
 
+			cache.setData('willusestore','hello');
 
-			// cache.runUpdaters('testUpdater2').then(function(){
-			// 	request_update_promise_complete1 = UPDATER_RUNS;
-			// });
-			// cache.runUpdaters().then(function(){
-			// 	request_all_updaters_run = true;
-			// });
+			var test_default_ttl = false;
 
-			// SAY("OK3");
+			setTimeout(function(){
+				cache.getData('willusestore').then(function(v){
+					SAY("willusestore = ",v);
+					TEST.equal(v,"hello","default TTL is working.");
+					test_default_ttl = true;
+				},function(){
+					TEST.ok(false,"Wrong path 'willusestore'");
+				});
+			},4000); // default TTL is 2000
+
+			cache.setData('willvanish','hello',{
+				noBacking: true
+			});
+
+			var test_default_ttl_nobacking = false;
+
+			setTimeout(function(){
+				cache.getData('willvanish').then(function(v){
+					SAY("willvanish = ",v);
+					TEST.equal(v,"hello","default TTL is working, no backing.");
+					test_default_ttl_nobacking = true;
+				},function(){
+					TEST.ok(false,"Wrong path 'willvanish'");
+				});
+			},4000); // default TTL is 2000
+
+
+
 
 			cache.setData('key1',3,{
 				updater: testUpdater
@@ -470,7 +494,8 @@ this.backing_store =  {
 		     		TEST.ok(test_default_updater_no_key,"Tested default updater, no key");
 		    		TEST.ok(test_default_updater_no_key_2,"Tested default updater, no key (2)");
 		    		TEST.ok(test_post_clear_default_key,"Tested default updater, post clear()");
-
+		    		TEST.ok(test_default_ttl,"Tested default TTL");
+		    		TEST.ok(test_default_ttl_nobacking,"Tested default TTL, no backing");
 					TEST.done();
 
 	     		},2000);

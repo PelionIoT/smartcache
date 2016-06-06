@@ -1101,6 +1101,12 @@ log_dbg("removeData #7")
 
     }
 
+    /**
+     * Drops the key out of cache (although its storage will remain)
+     * and asks its Updater to refresh it's value
+     * @param  {[type]} key [description]
+     * @return {[type]}     [description]
+     */
     this.invalidateKey = function(key) {
         // drop the key out of cache. If it has an updater
         // it's updater should run the next time it's needed.

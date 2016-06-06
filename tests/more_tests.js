@@ -403,11 +403,15 @@ this.backing_store =  {
 
 				cache.getData('non-existant-key').then(function(r){
 					SAY("NON non-existant-key 1",r);
+					TEST.equal(r,undefined,"Correct value for non-existant-key");
+					TEST.ok(true,"Correct path for non-existant-key");
 				},function(e){
+					TEST.ok(false,"Wrong path for non-existant-key");
 					SAY("NON non-existant-key 2",e);
 				}).catch(function(e){
+					TEST.ok(false,"Wrong path for non-existant-key - @catch");
 					SAY("NON non-existant-key 3");
-				})
+				});
 
 
 			},10000);
