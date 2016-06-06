@@ -146,6 +146,8 @@ this.backing_store =  {
 				interval: 5000,
 				id: 'testUpdater2',
 				defaultTTL: 2000,
+				updateAfterMisses: true, // asks for an update, after a miss occurs, even if it was
+				                         // in storage
 				equalityCB: function(key,newval,oldval) {
 					console.log("called equalityCB!!!");
 					calledEqualityCB++;
@@ -158,17 +160,17 @@ this.backing_store =  {
 			});
 
 
-			var brokenUpdater = new cache.Updater(function(cache){
+			var afterMissesUpdater = new cache.Updater(function(cache){
 				// this - refers to the Updater
-				log.debug("brokenUpdater update()");
+				log.debug("afterMissesUpdater update()");
 				throw "crap";
 			},
 			function(){
-				console.trace("[brokenUpdater] OnShutdown");
+				console.trace("[afterMissesUpdater] OnShutdown");
 			},
 			{
 				interval: 5000,
-				id: 'brokenUpdater',
+				id: 'afterMissesUpdater',
 				equalityCB: function(key,newval,oldval) {
 					console.log("called equalityCB!!!");
 					calledEqualityCB++;
