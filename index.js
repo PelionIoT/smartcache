@@ -671,9 +671,9 @@ var SmartCache = function(opts) {
             } else {
                 this._runToken.resolve();                
             }
-
         }        
     }
+
 
 
     /**
@@ -857,7 +857,7 @@ var SmartCache = function(opts) {
                 try {
                     ret = _cb.call(_selfUpdater,delg);
                 } catch(e) {
-                    log_err("Error in updater",_selfUpdater.id(),"callback:",e);
+                    log_err("@catch in updater",_selfUpdater.id(),"callback:",e);
                     delg._complete(e);
                     _throttleTimer = setTimeout(function(){
                         log_dbg("THROTTLE: "+_id+" in timeout for throttle");
@@ -891,6 +891,8 @@ var SmartCache = function(opts) {
                         // _throttleCbQ = [];
                         // _throttleTimer = null;
                     },function(err){
+                        log_err("@reject in throttled selfUpdate.doUpdate()",err);
+                        delg._complete(err);
                         if(currentDelgCache.isDirty()) {
                             _throttleTimer = setTimeout(function(){
                                 doUpdate();
@@ -911,7 +913,8 @@ var SmartCache = function(opts) {
                         // _throttleCbQ = [];
                         // _throttleTimer = null;
                     }).catch(function(e){
-                        log_err("Exception in throttled selfUpdate.doUpdate()",e);
+                        log_err("@.catch() in throttled selfUpdate.doUpdate()",e);
+                        delg._complete(e);
                         if(currentDelgCache.isDirty()) {
                             _throttleTimer = setTimeout(function(){
                                 doUpdate();
@@ -1311,7 +1314,7 @@ log_dbg("removeData #7")
                                 resolve(r);
                             },function(e){
                                 log_dbg("   -> reject from storage.",e);                                
-                                reject(e);
+                                resolve(undefined);
                             }).catch(function(e){
                                 log_dbg("   -> @catch from storage.",e);                                
                                 reject(e);                                
@@ -1351,10 +1354,10 @@ log_dbg("removeData #7")
                                 resolve(cache.get(key));
                             },function(e){
                                 log_dbg("no result. failure @error",e);
-                                resolve();
+                                resolve(undefined);
                             }).catch(function(e){
                                 log_err("failure @catch",e);
-                                resolve();
+                                reject(e);
                             });
                         } else {
                             log_err("default Updater is missing!! ",defaultUpdater,"null-ing out");
@@ -1397,7 +1400,7 @@ log_dbg("removeData #7")
                             stats.misses++;
                         },function(err){
                             log_err("Error back from Updater.",err);
-                            reject(err);
+                            resolve(undefined);
                         }).catch(function(e){
                             log_err("@catch ",e);
                             reject(e);
@@ -1414,10 +1417,10 @@ log_dbg("removeData #7")
                                     resolve(cache.get(key));
                                 },function(e){
                                     log_dbg("no result. failure @error",e);
-                                    resolve();
+                                    resolve(undefined);
                                 }).catch(function(e){
                                     log_err("failure @catch",e);
-                                    resolve();
+                                    reject(e);
                                 });
                             } else {
                                 log_err("default Updater is missing!! ",defaultUpdater,"null-ing out");

@@ -11,8 +11,11 @@ var base32 = require('base32');
 
 
 var cache = new SmartCache({
-	debug_mode: true
-	,updateAfterMisses: true  // uncomment to test opportunistic reads
+	debug_mode: true,
+	defaultTTL: 2000
+	,updateAfterMisses: true  // uncomment to test opportunistic reads asks for an
+                              // update, after a miss occurs, even if it was
+				              // in storage
 });
 
 var double = function(num) {
@@ -23,13 +26,20 @@ var SOME_NEW_KEY = null;
 var SOME_NEW_KEY_VAL = null;
 var SOMEVAL = "";
 
+
+var _nextval1 = 0;
+
 var VALS = {
 'key1' : 5,
 'key2' : 50,
 'key3' : 500,
 'key4' : 1000,
 'newval1' : base32.randomBase32(8),
-'newval2' : base32.randomBase32(8)
+'newval2' : base32.randomBase32(8),
+nextval1 : function() {
+	_nextval1++;
+	return _nextval1;
+}
 };
 
 var GARBAGE = 'garbage';
@@ -47,7 +57,10 @@ var externalDelFunc = function(key,val) {
 
 var externalGetFunc = function(key) {
 	console.log("externalGetFunc(",key,")");
-	return VALS[key]; 
+	if(typeof VALS[key] == 'function') {
+		return VALS[key]();
+	} else
+		return VALS[key]; 
 }
 
 var calledEqualityCB = 0;
@@ -97,6 +110,7 @@ this.backing_store =  {
 				var setkeys = cache.getWriteReqs(); // The `setkeys` is an array of keys which need to be set by the Updater      
 				var getkeys = cache.getReadReqs();  // need to get read by the Updater - and then, set() in the cache
 				var delkeys = cache.getDelReqs();
+
 				console.log("in [testUpdater] Updater:",this.id()); // this refers to the Updater
 				for(var n=0;n<setkeys.length;n++) {
 					console.log("[testUpdater] Updating key",setkeys[n]);
@@ -115,6 +129,10 @@ this.backing_store =  {
 				}
 				for(var n=0;n<getkeys.length;n++) {
 					console.log("[testUpdater] Setting key",getkeys[n]);
+					if(getkeys[n] == "REJECT_UPDATER") {
+						return Promise.reject();
+					}
+
 					if(getkeys[n] == "something not here") {
 				    cache.setFail(getkeys[n]); // you can mark certain keys as failing. So this 'set' failed.
 				                               // this is 'fail fast' - note, any key request not marked 
@@ -145,9 +163,6 @@ this.backing_store =  {
 			{
 				interval: 5000,
 				id: 'testUpdater2',
-				defaultTTL: 2000,
-				updateAfterMisses: true, // asks for an update, after a miss occurs, even if it was
-				                         // in storage
 				equalityCB: function(key,newval,oldval) {
 					console.log("called equalityCB!!!");
 					calledEqualityCB++;
@@ -229,7 +244,19 @@ this.backing_store =  {
 				});
 			},4000); // default TTL is 2000
 
-
+			cache.getData('nextval1').then(function(v){
+				SAY("nextval1 #1 = ",v);
+				setTimeout(function(){
+					cache.getData('nextval1').then(function(v1){
+						SAY("nextval1 #2 = ",v1);
+						setTimeout(function(){
+							cache.getData('nextval1').then(function(v2){
+								SAY("nextval1 #3 = ",v2);
+							});
+						},1000);
+					})
+				},4000);
+			});
 
 
 			cache.setData('key1',3,{
@@ -240,6 +267,8 @@ this.backing_store =  {
 			cache.setDefaultUpdater('testUpdater2');
 
 			var test_default_updater = false;
+			var test_default_updater_no_key = false;
+			var test_default_updater_no_key_2 = false;
 
 			cache.getData('newval1').then(function(v){
 				SAY("get key newval1",v);
@@ -466,6 +495,22 @@ this.backing_store =  {
 
 			// },10000);
 
+			var tested_failed_updater = false;
+
+			setTimeout(function(){
+				SAY("TESTING failed (reject) updater");
+				cache.getData("REJECT_UPDATER").then(function(v){
+					tested_failed_updater = true;
+					SAY("Failed updater key REJECT_UPDATER:",v);
+					TEST.ok(true,"Reject on failed updater - correct");
+				},function(){
+					tested_failed_updater = true;
+					TEST.ok(false,"Should not reach here");
+				}).catch(function(){
+					tested_failed_updater = true;
+					TEST.ok(false,"Failed on failed updater");
+				});
+			},12000);
 
 			setTimeout(function(){
 				// clearInterval(printInterval);
@@ -493,6 +538,7 @@ this.backing_store =  {
 
 	     		setTimeout(function(){
 		     		TEST.ok(test_default_updater,"Tested default updater");
+		     		TEST.ok(tested_failed_updater,"Tested failure (reject) in updater");
 		     		TEST.ok(test_default_updater_no_key,"Tested default updater, no key");
 		    		TEST.ok(test_default_updater_no_key_2,"Tested default updater, no key (2)");
 		    		TEST.ok(test_post_clear_default_key,"Tested default updater, post clear()");
